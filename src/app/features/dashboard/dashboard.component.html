@@ -1,0 +1,125 @@
+﻿<div class="dashboard">
+  <div class="dashboard__header">
+    <h2 class="dashboard__title">Bảng điều khiển</h2>
+    <p class="dashboard__subtitle">Tổng quan hoạt động bãi đỗ xe</p>
+  </div>
+
+  <!-- Stats Grid -->
+  <div class="stats-grid">
+    <div class="stat-card" *ngFor="let stat of stats; trackBy: trackByStat">
+      <div class="stat-card__top">
+        <div class="stat-card__icon" [ngClass]="'is-' + stat.color">
+          <ng-container [ngSwitch]="stat.icon">
+            <svg *ngSwitchCase="'pin'" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M12 2a6 6 0 0 0-6 6c0 4.5 6 11 6 11s6-6.5 6-11a6 6 0 0 0-6-6zm0 8.5a2.5 2.5 0 1 1 0-5 2.5 2.5 0 0 1 0 5z"></path>
+            </svg>
+            <svg *ngSwitchCase="'car'" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M4 14l2.2-6h11.6L20 14"></path>
+              <path d="M6 14h12v4H6z"></path>
+            </svg>
+            <svg *ngSwitchCase="'trend'" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M4 14l5-5 3 3 6-6"></path>
+            </svg>
+          </ng-container>
+        </div>
+        <span
+          class="stat-card__change"
+          *ngIf="stat.change && stat.change.type !== 'neutral'"
+          [ngClass]="stat.change.type === 'up' ? 'is-up' : 'is-down'"
+        >
+          <svg *ngIf="stat.change.type === 'up'" viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M4 10l4-4 4 4"></path>
+          </svg>
+          <svg *ngIf="stat.change.type === 'down'" viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M4 6l4 4 4-4"></path>
+          </svg>
+          {{ stat.change.value }}
+        </span>
+      </div>
+      <div class="stat-card__body">
+        <p class="stat-card__title">{{ stat.title }}</p>
+        <p class="stat-card__value">{{ stat.value }}</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Charts -->
+  <div class="charts-grid">
+    <!-- Revenue Chart -->
+    <div class="chart-panel">
+      <h3 class="chart-panel__title">Doanh thu tuần (nghìn VNĐ)</h3>
+      <div class="chart chart--bar">
+        <div class="bar" *ngFor="let item of revenueData; trackBy: trackByRevenue">
+          <div class="bar__fill" [style.height.%]="(item.value / revenueMax) * 100"></div>
+          <span class="bar__label">{{ item.name }}</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Occupancy Chart -->
+    <div class="chart-panel">
+      <h3 class="chart-panel__title">Tỷ lệ lấp đầy trong ngày (%)</h3>
+      <div class="chart chart--line">
+        <svg viewBox="0 0 100 100" preserveAspectRatio="none">
+          <polyline
+            [attr.points]="occupancyPath"
+            fill="none"
+            stroke="#10b981"
+            stroke-width="2"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          ></polyline>
+          <circle *ngFor="let point of occupancyChart" [attr.cx]="point.x" [attr.cy]="point.y" r="4" fill="#10b981"></circle>
+        </svg>
+        <div class="chart--line__labels">
+          <span *ngFor="let point of occupancyData; trackBy: trackByOccupancy">{{ point.time }}</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Recent Activities -->
+  <div class="activities-panel">
+    <div class="activities-panel__header">
+      <h3 class="activities-panel__title">Hoạt động gần đây</h3>
+    </div>
+    <div class="activities__table-wrapper">
+      <table class="activities-table">
+        <thead>
+          <tr>
+            <th>Loại</th>
+            <th>Biển số xe</th>
+            <th>Vị trí</th>
+            <th>Thời gian</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr *ngFor="let activity of recentActivities; trackBy: trackByActivity">
+            <td>
+              <span class="badge" [ngClass]="activity.type === 'in' ? 'is-in' : 'is-out'">
+                <svg *ngIf="activity.type === 'in'" viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M4 6l4 4 4-4"></path>
+                </svg>
+                <svg *ngIf="activity.type === 'out'" viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M4 10l4-4 4 4"></path>
+                </svg>
+                {{ activity.type === 'in' ? 'Vào' : 'Ra' }}
+              </span>
+            </td>
+            <td>{{ activity.plate }}</td>
+            <td>{{ activity.spot }}</td>
+            <td>
+              <span class="time">
+                <svg viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                  <circle cx="8" cy="8" r="6"></circle>
+                  <path d="M8 4v4l2 2"></path>
+                </svg>
+                {{ activity.time }}
+              </span>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>

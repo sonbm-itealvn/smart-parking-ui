@@ -1,0 +1,149 @@
+﻿<div class="vehicle-page">
+  <header class="vehicle-header">
+    <div>
+      <p class="eyebrow">Quản lý xe ra vào</p>
+      <h1>Theo dõi và quản lý phương tiện trong bãi</h1>
+    </div>
+    <button type="button" class="primary" (click)="showAddModal = true">
+      <span>+</span>
+      Thêm xe vào
+    </button>
+  </header>
+
+  <section class="stat-grid">
+    <article class="stat-card">
+      <p class="stat-label">Đang đỗ</p>
+      <p class="stat-value">{{ stats.parked }} xe</p>
+    </article>
+    <article class="stat-card">
+      <p class="stat-label">Đã ra</p>
+      <p class="stat-value">{{ stats.exited }} xe</p>
+    </article>
+    <article class="stat-card">
+      <p class="stat-label">Tổng thu</p>
+      <p class="stat-value">{{ stats.totalFee | number }} VNĐ</p>
+    </article>
+  </section>
+
+  <section class="panel filter-panel">
+    <div class="filters">
+      <label class="search-field">
+        <input
+          type="text"
+          placeholder="Tìm kiếm biển số xe hoặc vị trí..."
+          [value]="searchQuery"
+          (input)="searchQuery = $any($event.target).value"
+        />
+      </label>
+      <select [value]="filterStatus" (change)="filterStatus = $any($event.target).value">
+        <option value="all">Tất cả</option>
+        <option value="parked">Đang đỗ</option>
+        <option value="exited">Đã ra</option>
+      </select>
+    </div>
+  </section>
+
+  <section class="panel">
+    <div class="table-wrapper">
+      <table>
+        <thead>
+          <tr>
+            <th>Biển số</th>
+            <th>Loại xe</th>
+            <th>Vị trí</th>
+            <th>Giờ vào</th>
+            <th>Giờ ra</th>
+            <th>Thời gian</th>
+            <th>Phí</th>
+            <th>Trạng thái</th>
+            <th>Hành động</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr *ngFor="let vehicle of filteredVehicles; trackBy: trackByVehicle">
+            <td>{{ vehicle.plate }}</td>
+            <td>{{ vehicle.vehicleType }}</td>
+            <td>{{ vehicle.spot }}</td>
+            <td>{{ vehicle.entryTime }}</td>
+            <td>{{ vehicle.exitTime || '-' }}</td>
+            <td>{{ vehicle.duration || '-' }}</td>
+            <td>{{ vehicle.fee ? (vehicle.fee | number) + ' VNĐ' : '-' }}</td>
+            <td>
+              <span class="badge" [class.is-active]="vehicle.status === 'parked'">
+                {{ vehicle.status === 'parked' ? 'Đang đỗ' : 'Đã ra' }}
+              </span>
+            </td>
+            <td>
+              <button *ngIf="vehicle.status === 'parked'" class="ghost" type="button" (click)="openCheckout(vehicle)">
+                Xuất xe
+              </button>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+</div>
+
+<div class="modal" *ngIf="showAddModal">
+  <div class="modal__backdrop" (click)="showAddModal = false"></div>
+  <div class="modal__content">
+    <header>
+      <h3>Thêm xe vào bãi</h3>
+      <button type="button" (click)="showAddModal = false">×</button>
+    </header>
+    <div class="modal__body">
+      <label>
+        <span>Biển số xe</span>
+        <input type="text" [value]="newVehicle.plate" (input)="newVehicle.plate = $any($event.target).value" />
+      </label>
+      <label>
+        <span>Loại xe</span>
+        <select [value]="newVehicle.vehicleType" (change)="newVehicle.vehicleType = $any($event.target).value">
+          <option value="Ô tô">Ô tô</option>
+          <option value="Xe máy">Xe máy</option>
+        </select>
+      </label>
+      <label>
+        <span>Vị trí đỗ</span>
+        <input type="text" [value]="newVehicle.spot" (input)="newVehicle.spot = $any($event.target).value" />
+      </label>
+    </div>
+    <footer>
+      <button type="button" class="ghost" (click)="showAddModal = false">Hủy</button>
+      <button type="button" class="primary" (click)="handleAddVehicle()">Thêm</button>
+    </footer>
+  </div>
+</div>
+
+<div class="modal" *ngIf="selectedVehicle as vehicle">
+  <div class="modal__backdrop" (click)="selectedVehicle = null"></div>
+  <div class="modal__content">
+    <header>
+      <h3>Xuất xe</h3>
+      <button type="button" (click)="selectedVehicle = null">×</button>
+    </header>
+    <div class="modal__body">
+      <div class="detail-row">
+        <span>Biển số:</span>
+        <strong>{{ vehicle.plate }}</strong>
+      </div>
+      <div class="detail-row">
+        <span>Loại xe:</span>
+        <strong>{{ vehicle.vehicleType }}</strong>
+      </div>
+      <div class="detail-row">
+        <span>Vị trí:</span>
+        <strong>{{ vehicle.spot }}</strong>
+      </div>
+      <div class="detail-row">
+        <span>Giờ vào:</span>
+        <strong>{{ vehicle.entryTime }}</strong>
+      </div>
+    </div>
+    <footer>
+      <button type="button" class="ghost" (click)="selectedVehicle = null">Hủy</button>
+      <button type="button" class="primary" (click)="handleCheckout(vehicle)">Xác nhận xuất xe</button>
+    </footer>
+  </div>
+</div>

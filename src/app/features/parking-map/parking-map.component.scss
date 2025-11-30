@@ -1,0 +1,511 @@
+:host {
+  display: block;
+}
+
+.parking-map-page {
+  padding: 32px;
+}
+
+.page-header {
+  margin-bottom: 32px;
+}
+
+.page-title {
+  margin: 0 0 8px;
+  font-size: 1.5rem;
+  font-weight: 600;
+  color: #111827;
+}
+
+.page-subtitle {
+  margin: 0;
+  color: #6b7280;
+  font-size: 0.875rem;
+}
+
+/* Stats Grid */
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 16px;
+  margin-bottom: 24px;
+}
+
+.stat-card {
+  background: #ffffff;
+  border-radius: 8px;
+  padding: 16px;
+  border: 1px solid #e5e7eb;
+}
+
+.stat-label-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.stat-label {
+  margin: 0;
+  color: #6b7280;
+  font-size: 0.875rem;
+}
+
+.stat-value {
+  margin: 0;
+  color: #111827;
+  font-size: 1.25rem;
+  font-weight: 600;
+}
+
+.status-dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+}
+
+.status-dot--green {
+  background: #22c55e;
+}
+
+.status-dot--red {
+  background: #ef4444;
+}
+
+.status-dot--yellow {
+  background: #eab308;
+}
+
+/* Camera Panel */
+.camera-panel {
+  background: #ffffff;
+  border-radius: 12px;
+  padding: 24px;
+  border: 1px solid #e5e7eb;
+  margin-bottom: 24px;
+}
+
+.camera-panel__header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.camera-icon {
+  width: 20px;
+  height: 20px;
+  color: #111827;
+}
+
+.camera-panel__title {
+  margin: 0;
+  font-size: 1.125rem;
+  font-weight: 600;
+  color: #111827;
+}
+
+.camera-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 16px;
+}
+
+.camera-card {
+  position: relative;
+  border-radius: 8px;
+  overflow: hidden;
+  border: 1px solid #e5e7eb;
+  cursor: pointer;
+  transition: border-color 0.2s ease, transform 0.2s ease;
+  background: #ffffff;
+}
+
+.camera-card:hover {
+  border-color: #3b82f6;
+  transform: translateY(-2px);
+}
+
+.camera-thumb {
+  position: relative;
+  aspect-ratio: 16 / 9;
+  background-size: cover;
+  background-position: center;
+  background-color: #111827;
+}
+
+.live-pill {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: #dc2626;
+  color: #ffffff;
+  padding: 4px 8px;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.live-pill__dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #ffffff;
+  animation: pulse 1.4s ease infinite;
+}
+
+.live-pill__text {
+  color: #ffffff;
+}
+
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
+}
+
+.camera-expand-btn {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  background: rgba(0, 0, 0, 0.5);
+  padding: 6px;
+  border-radius: 999px;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.camera-card:hover .camera-expand-btn {
+  opacity: 1;
+}
+
+.camera-expand-btn svg {
+  width: 16px;
+  height: 16px;
+  color: #ffffff;
+}
+
+.camera-time {
+  position: absolute;
+  bottom: 8px;
+  right: 8px;
+  background: rgba(0, 0, 0, 0.5);
+  color: #ffffff;
+  padding: 4px 8px;
+  font-size: 0.75rem;
+  border-radius: 6px;
+}
+
+.camera-body {
+  padding: 12px;
+  background: #ffffff;
+}
+
+.camera-title {
+  margin: 0 0 4px;
+  font-weight: 600;
+  color: #111827;
+  font-size: 0.875rem;
+}
+
+.camera-location {
+  margin: 0;
+  font-size: 0.75rem;
+  color: #6b7280;
+}
+
+/* Filter Panel */
+.filter-panel {
+  background: #ffffff;
+  border-radius: 12px;
+  padding: 24px;
+  border: 1px solid #e5e7eb;
+  margin-bottom: 24px;
+}
+
+.filter-row {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+@media (min-width: 768px) {
+  .filter-row {
+    flex-direction: row;
+  }
+}
+
+.search-field {
+  flex: 1;
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.search-icon {
+  position: absolute;
+  left: 12px;
+  width: 20px;
+  height: 20px;
+  color: #9ca3af;
+  pointer-events: none;
+}
+
+.search-field input {
+  width: 100%;
+  padding: 8px 12px 8px 40px;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  font-size: 0.9375rem;
+  outline: none;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.search-field input:focus {
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+}
+
+.zone-select {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  padding: 8px 12px;
+  background: #ffffff;
+}
+
+.filter-icon {
+  width: 20px;
+  height: 20px;
+  color: #6b7280;
+  flex-shrink: 0;
+}
+
+.zone-select select {
+  border: none;
+  outline: none;
+  font-size: 0.9375rem;
+  background: transparent;
+  color: #111827;
+  cursor: pointer;
+  flex: 1;
+}
+
+.zone-select select:focus {
+  outline: none;
+}
+
+/* Parking Grid Panel */
+.parking-grid-panel {
+  background: #ffffff;
+  border-radius: 12px;
+  padding: 24px;
+  border: 1px solid #e5e7eb;
+}
+
+.parking-grid {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 12px;
+}
+
+@media (min-width: 768px) {
+  .parking-grid {
+    grid-template-columns: repeat(10, 1fr);
+  gap: 12px;
+  }
+}
+
+@media (min-width: 1024px) {
+  .parking-grid {
+    grid-template-columns: repeat(15, 1fr);
+    gap: 12px;
+  }
+}
+
+.parking-slot {
+  position: relative;
+  border-radius: 8px;
+  padding: 12px 6px;
+  cursor: pointer;
+  transition: transform 0.15s ease;
+  text-align: center;
+  color: #ffffff;
+  font-weight: 600;
+  font-size: 0.75rem;
+}
+
+.parking-slot:hover {
+  transform: translateY(-2px);
+}
+
+.slot-text {
+  color: #ffffff;
+}
+
+.slot-available {
+  background: #22c55e;
+}
+
+.slot-available:hover {
+  background: #16a34a;
+}
+
+.slot-occupied {
+  background: #ef4444;
+}
+
+.slot-occupied:hover {
+  background: #dc2626;
+}
+
+.slot-reserved {
+  background: #eab308;
+}
+
+.slot-reserved:hover {
+  background: #ca8a04;
+}
+
+.slot-tooltip {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 50%;
+  transform: translateX(-50%);
+  background: #111827;
+  color: #ffffff;
+  padding: 8px 12px;
+  border-radius: 8px;
+  font-size: 0.75rem;
+  white-space: nowrap;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.15s ease;
+  z-index: 10;
+}
+
+.parking-slot:hover .slot-tooltip {
+  opacity: 1;
+}
+
+.tooltip-arrow {
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 0;
+  height: 0;
+  border-left: 6px solid transparent;
+  border-right: 6px solid transparent;
+  border-top: 6px solid #111827;
+}
+
+/* Camera Modal */
+.camera-modal {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 50;
+  padding: 16px;
+  background: rgba(0, 0, 0, 0.75);
+}
+
+.camera-modal__content {
+  background: #ffffff;
+  border-radius: 12px;
+  overflow: hidden;
+  max-width: 1152px;
+  width: 100%;
+}
+
+.camera-modal__header {
+  background: #111827;
+  padding: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.camera-modal__header-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.camera-modal__info {
+  color: #ffffff;
+}
+
+.camera-modal__name {
+  margin: 0 0 4px;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: #ffffff;
+}
+
+.camera-modal__location {
+  margin: 0;
+  font-size: 0.75rem;
+  color: rgba(255, 255, 255, 0.7);
+}
+
+.camera-modal__close {
+  background: transparent;
+  border: none;
+  color: #ffffff;
+  padding: 8px;
+  border-radius: 50%;
+  cursor: pointer;
+  transition: background-color 0.2s ease;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.camera-modal__close:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.camera-modal__close svg {
+  width: 20px;
+  height: 20px;
+}
+
+.camera-modal__body {
+  aspect-ratio: 16 / 9;
+  background-size: cover;
+  background-position: center;
+  background-color: #111827;
+}
+
+@media (max-width: 768px) {
+  .parking-map-page {
+    padding: 16px;
+  }
+
+  .stats-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .camera-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .parking-grid {
+    grid-template-columns: repeat(5, 1fr);
+  }
+}

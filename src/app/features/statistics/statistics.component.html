@@ -1,0 +1,173 @@
+﻿<div class="statistics">
+  <div class="statistics__header">
+    <h2 class="statistics__title">Thống kê & Báo cáo</h2>
+    <p class="statistics__subtitle">Phân tích chi tiết hoạt động bãi đỗ xe</p>
+  </div>
+
+  <!-- Summary Stats -->
+  <div class="summary-grid">
+    <div class="summary-card" *ngFor="let card of summaryCards">
+      <div class="summary-card__top">
+        <div class="summary-card__icon" [ngClass]="'is-' + card.color">
+          <ng-container [ngSwitch]="card.color">
+            <svg *ngSwitchCase="'blue'" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <line x1="12" y1="2" x2="12" y2="22"></line>
+              <path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path>
+            </svg>
+            <svg *ngSwitchCase="'green'" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="23 6 13.5 15.5 8.5 10.5 1 18"></polyline>
+              <polyline points="17 6 23 6 23 12"></polyline>
+            </svg>
+            <svg *ngSwitchCase="'purple'" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="10"></circle>
+              <polyline points="12 6 12 12 16 14"></polyline>
+            </svg>
+            <svg *ngSwitchCase="'orange'" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
+              <line x1="16" y1="2" x2="16" y2="6"></line>
+              <line x1="8" y1="2" x2="8" y2="6"></line>
+              <line x1="3" y1="10" x2="21" y2="10"></line>
+            </svg>
+          </ng-container>
+        </div>
+      </div>
+      <div class="summary-card__body">
+        <p class="summary-card__title">{{ card.title }}</p>
+        <p class="summary-card__value">{{ card.value }}</p>
+        <p class="summary-card__note" *ngIf="card.change" [ngClass]="'is-' + (card.change.includes('+') ? 'positive' : 'neutral')">{{ card.change }}</p>
+        <p class="summary-card__note" *ngIf="card.note && !card.change" [ngClass]="'is-neutral'">{{ card.note }}</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Revenue and Vehicles Chart -->
+  <div class="chart-panel">
+    <h3 class="chart-panel__title">Doanh thu và lượt xe theo tháng</h3>
+    <div class="dual-line-chart">
+      <svg viewBox="0 0 100 100" preserveAspectRatio="none">
+        <polyline
+          [attr.points]="revenueChartRevenuePath"
+          fill="none"
+          stroke="#3b82f6"
+          stroke-width="2"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        ></polyline>
+        <polyline
+          [attr.points]="revenueChartVehiclesPath"
+          fill="none"
+          stroke="#10b981"
+          stroke-width="2"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        ></polyline>
+        <circle
+          *ngFor="let point of revenueChart.revenue; trackBy: trackByMonth"
+          [attr.cx]="point.x"
+          [attr.cy]="point.y"
+          r="4"
+          fill="#3b82f6"
+        ></circle>
+        <circle
+          *ngFor="let point of revenueChart.vehicles; trackBy: trackByMonth"
+          [attr.cx]="point.x"
+          [attr.cy]="point.y"
+          r="4"
+          fill="#10b981"
+        ></circle>
+      </svg>
+      <div class="chart-legend">
+        <span class="legend-item">
+          <span class="dot is-blue"></span>
+          Doanh thu (nghìn VNĐ)
+        </span>
+        <span class="legend-item">
+          <span class="dot is-green"></span>
+          Lượt xe
+        </span>
+      </div>
+      <div class="chart-labels">
+        <span *ngFor="let point of revenueByMonth; trackBy: trackByMonth">{{ point.month }}</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Vehicle Type and Peak Hours -->
+  <div class="grid-two">
+    <!-- Vehicle Type Distribution -->
+    <div class="chart-panel">
+      <h3 class="chart-panel__title">Phân bổ loại phương tiện</h3>
+      <div class="pie-chart">
+        <div class="pie-chart__circle">
+          <div class="pie-chart__ring" [style.background]="vehiclePieBackground"></div>
+        </div>
+        <div class="pie-chart__legend">
+          <div *ngFor="let item of vehicleTypeData; trackBy: trackByType" class="legend-item">
+            <span class="dot" [style.background-color]="item.color"></span>
+            <span>{{ item.name }}</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Peak Hours -->
+    <div class="chart-panel">
+      <h3 class="chart-panel__title">Giờ cao điểm</h3>
+      <div class="bar-chart">
+        <div class="bar" *ngFor="let hour of peakHours; trackBy: trackByHour">
+          <div class="bar__fill" [style.height.%]="(hour.count / maxPeak) * 100"></div>
+          <span class="bar__label">{{ hour.hour }}</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Average Duration and Top Spots -->
+  <div class="grid-two">
+    <!-- Average Duration -->
+    <div class="chart-panel">
+      <h3 class="chart-panel__title">Thời gian đỗ trung bình (giờ)</h3>
+      <div class="line-chart">
+        <svg viewBox="0 0 100 100" preserveAspectRatio="none">
+          <polyline
+            [attr.points]="averageDurationPath"
+            fill="none"
+            stroke="#f59e0b"
+            stroke-width="2"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          ></polyline>
+          <circle
+            *ngFor="let point of averageDurationLine; trackBy: trackByDuration"
+            [attr.cx]="point.x"
+            [attr.cy]="point.y"
+            r="4"
+            fill="#f59e0b"
+          ></circle>
+        </svg>
+        <div class="chart-labels">
+          <span *ngFor="let point of averageDuration; trackBy: trackByDuration">{{ point.day }}</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Top Parking Spots -->
+    <div class="chart-panel">
+      <h3 class="chart-panel__title">Top 5 vị trí được sử dụng nhiều nhất</h3>
+      <div class="top-spots">
+        <div *ngFor="let spot of topSpots; let i = index; trackBy: trackBySpot" class="top-spot-item">
+          <div class="top-spot-row">
+            <div class="top-spot-label">
+              <div class="rank-badge">{{ i + 1 }}</div>
+              <span>{{ spot.spot }}</span>
+            </div>
+            <span class="top-spot-value">{{ spot.usage }}%</span>
+          </div>
+          <div class="progress-bar">
+            <div class="progress-fill" [style.width.%]="spot.usage"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
