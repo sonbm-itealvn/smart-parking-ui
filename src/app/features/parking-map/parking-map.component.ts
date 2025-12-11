@@ -1,7 +1,7 @@
 ﻿import { CommonModule } from '@angular/common';
 import { Component } from '@angular/core';
 
-type SpotStatus = 'available' | 'occupied' | 'reserved';
+type SpotStatus = 'available' | 'occupied';
 
 interface ParkingSpot {
   id: string;
@@ -18,7 +18,7 @@ interface CameraFeed {
   status: 'active' | 'offline';
 }
 
-type StatKey = 'total' | 'available' | 'occupied' | 'reserved';
+type StatKey = 'total' | 'available' | 'occupied';
 
 @Component({
   selector: 'app-parking-map-page',
@@ -31,7 +31,7 @@ export class ParkingMapComponent {
   private readonly zones = ['A', 'B', 'C', 'D'];
   private readonly spotsPerZone = 25;
   private readonly vehicles = ['29A-12345', '30B-67890', '51C-11111', '92D-99999', '43E-55555'];
-  private readonly statuses: SpotStatus[] = ['available', 'occupied', 'reserved'];
+  private readonly statuses: SpotStatus[] = ['available', 'occupied'];
 
   readonly spots: ParkingSpot[] = this.generateSpots();
 
@@ -49,28 +49,13 @@ export class ParkingMapComponent {
       location: 'Khu vực B',
       imageUrl: 'https://images.unsplash.com/photo-1653750366046-289780bd8125?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3Nzg4Nzd8MHwxfHNlYXJjaHwxfHxjYXIlMjBwYXJrJTIwc2VjdXJpdHklMjBjYW1lcmF8ZW58MXx8fHwxNzY0NDY5MTgwfDA&ixlib=rb-4.1.0&q=80&w=1080&utm_source=figma&utm_medium=referral',
       status: 'active'
-    },
-    {
-      id: 3,
-      name: 'Khu vực C & D - Nội bộ',
-      location: 'Khu vực C-D',
-      imageUrl: 'https://images.unsplash.com/photo-1620726068483-d4d53738ba48?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3Nzg4Nzd8MHwxfHNlYXJjaHwxfHxwYXJraW5nJTIwZ2FyYWdlJTIwaW50ZXJpb3J8ZW58MXx8fHwxNzY0NDMyNTY3fDA&ixlib=rb-4.1.0&q=80&w=1080&utm_source=figma&utm_medium=referral',
-      status: 'active'
-    },
-    {
-      id: 4,
-      name: 'Cổng vào/ra',
-      location: 'Lối vào chính',
-      imageUrl: 'https://images.unsplash.com/photo-1706797446368-8aa590d78fbf?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3Nzg4Nzd8MHwxfHNlYXJjaHwxfHxwYXJraW5nJTIwbG90JTIwZW50cmFuY2V8ZW58MXx8fHwxNzY0MzgzNjIwfDA&ixlib=rb-4.1.0&q=80&w=1080&utm_source=figma&utm_medium=referral',
-      status: 'active'
     }
   ];
 
   readonly statDefinitions: Array<{ key: StatKey; label: string; indicator?: SpotStatus }> = [
     { key: 'total', label: 'Tổng số chỗ' },
     { key: 'available', label: 'Còn trống', indicator: 'available' },
-    { key: 'occupied', label: 'Đang đỗ', indicator: 'occupied' },
-    { key: 'reserved', label: 'Đã đặt trước', indicator: 'reserved' }
+    { key: 'occupied', label: 'Đang đỗ', indicator: 'occupied' }
   ];
 
   readonly zoneFilters = [
@@ -87,8 +72,7 @@ export class ParkingMapComponent {
     return {
       total: this.spots.length,
       available: this.spots.filter((spot) => spot.status === 'available').length,
-      occupied: this.spots.filter((spot) => spot.status === 'occupied').length,
-      reserved: this.spots.filter((spot) => spot.status === 'reserved').length
+      occupied: this.spots.filter((spot) => spot.status === 'occupied').length
     };
   }
 
@@ -133,8 +117,6 @@ export class ParkingMapComponent {
         return 'Trống';
       case 'occupied':
         return 'Đang đỗ';
-      case 'reserved':
-        return 'Đã đặt';
       default:
         return status;
     }
