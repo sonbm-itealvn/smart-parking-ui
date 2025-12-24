@@ -1,5 +1,8 @@
 ﻿import { CommonModule } from '@angular/common';
-import { Component } from '@angular/core';
+import { Component, OnInit, computed, inject, signal } from '@angular/core';
+import { finalize, forkJoin } from 'rxjs';
+import { ApiClientService } from '../../core/services/api-client.service';
+import { ParkingSession, ParkingSlot, Payment, Vehicle } from '../../core/models/api.models';
 
 type SummaryCard = {
   title: string;
@@ -29,83 +32,38 @@ type LineNode<T> = T & { x: number; y: number };
   styleUrl: './statistics.component.scss',
   preserveWhitespaces: false
 })
-export class StatisticsComponent {
-  readonly summaryCards: SummaryCard[] = [
-    { title: 'Doanh thu tháng này', value: '63,000,000 VNĐ', change: '+6.8% so với tháng trước', color: 'blue' },
-    { title: 'Lượt xe trong tháng', value: '1,750 lượt', change: '+8.0% so với tháng trước', color: 'green' },
-    { title: 'Thời gian đỗ trung bình', value: '3.2 giờ', note: 'Trong tuần qua', color: 'purple' },
-    { title: 'Tỷ lệ sử dụng TB', value: '76.5%', change: '+3.2% so với tháng trước', color: 'orange' }
-  ];
+export class StatisticsComponent implements OnInit {
+  private readonly api = inject(ApiClientService);
 
-  readonly revenueByMonth: RevenuePoint[] = [
-    { month: 'T1', revenue: 45000, vehicles: 1200 },
-    { month: 'T2', revenue: 48000, vehicles: 1350 },
-    { month: 'T3', revenue: 52000, vehicles: 1450 },
-    { month: 'T4', revenue: 49000, vehicles: 1380 },
-    { month: 'T5', revenue: 55000, vehicles: 1520 },
-    { month: 'T6', revenue: 58000, vehicles: 1600 },
-    { month: 'T7', revenue: 62000, vehicles: 1720 },
-    { month: 'T8', revenue: 60000, vehicles: 1680 },
-    { month: 'T9', revenue: 56000, vehicles: 1550 },
-    { month: 'T10', revenue: 59000, vehicles: 1620 },
-    { month: 'T11', revenue: 63000, vehicles: 1750 }
-  ];
+  loading = true;
+  error: string | null = null;
 
-  readonly vehicleTypeData: VehicleType[] = [
-    { name: 'Ô tô', value: 68, color: '#3b82f6' },
-    { name: 'Xe máy', value: 32, color: '#10b981' }
-  ];
+  summaryCards = signal<SummaryCard[]>([]);
+  revenueByMonth = signal<RevenuePoint[]>([]);
+  vehicleTypeData = signal<VehicleType[]>([]);
+  peakHours = signal<PeakHour[]>([]);
+  averageDuration = signal<DurationPoint[]>([]);
+  topSpots = signal<TopSpot[]>([]);
 
-  readonly peakHours: PeakHour[] = [
-    { hour: '00:00', count: 15 },
-    { hour: '03:00', count: 8 },
-    { hour: '06:00', count: 45 },
-    { hour: '09:00', count: 180 },
-    { hour: '12:00', count: 140 },
-    { hour: '15:00', count: 150 },
-    { hour: '18:00', count: 190 },
-    { hour: '21:00', count: 95 }
-  ];
+  revenueChart = computed(() => this.buildDualLineChart(this.revenueByMonth()));
+  revenueChartRevenuePath = computed(() =>
+    this.revenueChart().revenue.map((p) => `${p.x.toFixed(2)},${p.y.toFixed(2)}`).join(' ')
+  );
+  revenueChartVehiclesPath = computed(() =>
+    this.revenueChart().vehicles.map((p) => `${p.x.toFixed(2)},${p.y.toFixed(2)}`).join(' ')
+  );
+  maxPeak = computed(() => Math.max(...this.peakHours().map((item) => item.count), 0));
+  maxDuration = computed(() => Math.max(...this.averageDuration().map((item) => item.duration), 0));
+  averageDurationLine = computed(() => this.buildLineSeries(this.averageDuration(), (item) => item.duration));
+  averageDurationPath = computed(() =>
+    this.averageDurationLine()
+      .map((point) => `${point.x.toFixed(2)},${point.y.toFixed(2)}`)
+      .join(' ')
+  );
+  vehiclePieBackground = computed(() => this.buildPieBackground(this.vehicleTypeData()));
 
-  readonly averageDuration: DurationPoint[] = [
-    { day: 'T2', duration: 2.5 },
-    { day: 'T3', duration: 2.8 },
-    { day: 'T4', duration: 2.3 },
-    { day: 'T5', duration: 3.1 },
-    { day: 'T6', duration: 3.5 },
-    { day: 'T7', duration: 4.2 },
-    { day: 'CN', duration: 3.8 }
-  ];
-
-  readonly topSpots: TopSpot[] = [
-    { spot: 'A-15', usage: 95 },
-    { spot: 'B-08', usage: 92 },
-    { spot: 'C-22', usage: 89 },
-    { spot: 'A-03', usage: 87 },
-    { spot: 'D-17', usage: 85 }
-  ];
-
-  readonly maxRevenue = Math.max(...this.revenueByMonth.map((item) => item.revenue));
-  readonly maxVehicles = Math.max(...this.revenueByMonth.map((item) => item.vehicles));
-  readonly maxPeak = Math.max(...this.peakHours.map((item) => item.count));
-  readonly maxDuration = Math.max(...this.averageDuration.map((item) => item.duration));
-
-  readonly revenuePathRevenue = this.buildLinePath(this.revenueByMonth.map((item) => item.revenue));
-  readonly revenuePathVehicles = this.buildLinePath(this.revenueByMonth.map((item) => item.vehicles));
-  readonly averageDurationLine: LineNode<DurationPoint>[] = this.buildLineSeries(this.averageDuration, (item) => item.duration);
-  readonly averageDurationPath = this.averageDurationLine.map((point) => `${point.x.toFixed(2)},${point.y.toFixed(2)}`).join(' ');
-  readonly vehiclePieBackground = this.buildPieBackground();
-
-  get revenueChart(): { revenue: LineNode<RevenuePoint>[]; vehicles: LineNode<RevenuePoint>[] } {
-    return this.buildDualLineChart();
-  }
-
-  get revenueChartRevenuePath(): string {
-    return this.revenueChart.revenue.map((p) => `${p.x.toFixed(2)},${p.y.toFixed(2)}`).join(' ');
-  }
-
-  get revenueChartVehiclesPath(): string {
-    return this.revenueChart.vehicles.map((p) => `${p.x.toFixed(2)},${p.y.toFixed(2)}`).join(' ');
+  ngOnInit(): void {
+    this.loadData();
   }
 
   trackByMonth(_: number, item: RevenuePoint): string {
@@ -128,20 +86,182 @@ export class StatisticsComponent {
     return item.spot;
   }
 
-  private buildLinePath(values: number[]): string {
-    const max = Math.max(...values);
-    const steps = Math.max(values.length - 1, 1);
-    return values
-      .map((value, index) => {
-        const x = (index / steps) * 100;
-        const y = 100 - (value / max) * 100;
-        return `${x.toFixed(2)},${y.toFixed(2)}`;
-      })
-      .join(' ');
+  private loadData(): void {
+    this.loading = true;
+    this.error = null;
+
+    forkJoin({
+      payments: this.api.getPayments(),
+      sessions: this.api.getParkingSessions(),
+      slots: this.api.getParkingSlots(),
+      vehicles: this.api.getVehicles()
+    })
+      .pipe(finalize(() => (this.loading = false)))
+      .subscribe({
+        next: ({ payments, sessions, slots, vehicles }) => {
+          this.summaryCards.set(this.buildSummaryCards(payments, sessions, slots));
+          this.revenueByMonth.set(this.buildRevenue(payments, sessions));
+          this.vehicleTypeData.set(this.buildVehicleTypes(vehicles));
+          this.peakHours.set(this.buildPeakHours(sessions));
+          this.averageDuration.set(this.buildDurations(sessions));
+          this.topSpots.set(this.buildTopSpots(sessions, slots));
+        },
+        error: () => {
+          this.error = 'Không tải được dữ liệu thống kê.';
+        }
+      });
+  }
+
+  private buildSummaryCards(payments: Payment[], sessions: ParkingSession[], slots: ParkingSlot[]): SummaryCard[] {
+    const now = new Date();
+    const currentMonth = now.getMonth();
+    const currentYear = now.getFullYear();
+    const currentMonthPayments = payments.filter((payment) => {
+      const date = new Date(payment.paymentTime);
+      return date.getMonth() === currentMonth && date.getFullYear() === currentYear;
+    });
+    const currentMonthSessions = sessions.filter((session) => {
+      const date = new Date(session.entryTime);
+      return date.getMonth() === currentMonth && date.getFullYear() === currentYear;
+    });
+
+    const revenue = currentMonthPayments.reduce((sum, payment) => sum + payment.amount, 0);
+    const avgDurationHours = this.calculateAverageDurationHours(currentMonthSessions);
+    const utilization = slots.length
+      ? Math.round((slots.filter((slot) => slot.status === 'occupied').length / slots.length) * 100)
+      : 0;
+
+    return [
+      { title: 'Doanh thu tháng này', value: `${revenue.toLocaleString()} VNĐ`, change: 'Theo tháng hiện tại', color: 'blue' },
+      { title: 'Lượt xe trong tháng', value: `${currentMonthSessions.length} lượt`, note: 'Tính theo lượt vào', color: 'green' },
+      { title: 'Thời gian đỗ trung bình', value: `${avgDurationHours.toFixed(1)} giờ`, note: 'Các phiên đã hoàn tất', color: 'purple' },
+      { title: 'Tỷ lệ sử dụng TB', value: `${utilization}%`, change: 'Trạng thái hiện tại', color: 'orange' }
+    ];
+  }
+
+  private buildRevenue(payments: Payment[], sessions: ParkingSession[]): RevenuePoint[] {
+    const months = ['T1', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'T8', 'T9', 'T10', 'T11', 'T12'];
+    const revenue = new Array(12).fill(0);
+    const vehicles = new Array(12).fill(0);
+
+    payments.forEach((payment) => {
+      const date = new Date(payment.paymentTime);
+      const index = date.getMonth();
+      revenue[index] += payment.amount;
+    });
+
+    sessions.forEach((session) => {
+      const date = new Date(session.entryTime);
+      const index = date.getMonth();
+      vehicles[index] += 1;
+    });
+
+    return months.map((month, index) => ({
+      month,
+      revenue: Math.round(revenue[index] / 1000), // nghìn VNĐ
+      vehicles: vehicles[index]
+    }));
+  }
+
+  private buildVehicleTypes(vehicles: Vehicle[]): VehicleType[] {
+    const colors: Record<string, string> = {
+      car: '#3b82f6',
+      motorcycle: '#10b981',
+      truck: '#f59e0b'
+    };
+    const counts: Record<string, number> = {};
+    vehicles.forEach((vehicle) => {
+      counts[vehicle.vehicleType] = (counts[vehicle.vehicleType] || 0) + 1;
+    });
+
+    return Object.entries(counts).map(([name, value]) => ({
+      name: this.mapVehicleName(name),
+      value,
+      color: colors[name] || '#6366f1'
+    }));
+  }
+
+  private buildPeakHours(sessions: ParkingSession[]): PeakHour[] {
+    const buckets = new Map<number, number>();
+    sessions.forEach((session) => {
+      const hour = new Date(session.entryTime).getHours();
+      buckets.set(hour, (buckets.get(hour) || 0) + 1);
+    });
+
+    return Array.from({ length: 24 }, (_, index) => ({
+      hour: `${index.toString().padStart(2, '0')}:00`,
+      count: buckets.get(index) || 0
+    })).filter((_, index) => index % 3 === 0); // mỗi 3 giờ
+  }
+
+  private buildDurations(sessions: ParkingSession[]): DurationPoint[] {
+    const weekDays = ['CN', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7'];
+    const totals = new Array(7).fill(0);
+    const counts = new Array(7).fill(0);
+
+    sessions
+      .filter((session) => session.exitTime)
+      .forEach((session) => {
+        const entry = new Date(session.entryTime);
+        const exit = new Date(session.exitTime!);
+        const hours = Math.max(0, (exit.getTime() - entry.getTime()) / (1000 * 60 * 60));
+        const dayIndex = entry.getDay();
+        totals[dayIndex] += hours;
+        counts[dayIndex] += 1;
+      });
+
+    return weekDays.map((day, index) => ({
+      day,
+      duration: counts[index] ? parseFloat((totals[index] / counts[index]).toFixed(2)) : 0
+    }));
+  }
+
+  private buildTopSpots(sessions: ParkingSession[], slots: ParkingSlot[]): TopSpot[] {
+    const slotMap = new Map(slots.map((slot) => [slot.id, slot.slotCode]));
+    const counts: Record<string, number> = {};
+
+    sessions.forEach((session) => {
+      const code = slotMap.get(session.parkingSlotId) || `#${session.parkingSlotId}`;
+      counts[code] = (counts[code] || 0) + 1;
+    });
+
+    return Object.entries(counts)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 5)
+      .map(([spot, usage]) => ({ spot, usage }));
+  }
+
+  private calculateAverageDurationHours(sessions: ParkingSession[]): number {
+    const completed = sessions.filter((session) => session.exitTime);
+    if (!completed.length) {
+      return 0;
+    }
+    const totalHours = completed.reduce((sum, session) => {
+      const entry = new Date(session.entryTime);
+      const exit = new Date(session.exitTime!);
+      return sum + Math.max(0, (exit.getTime() - entry.getTime()) / (1000 * 60 * 60));
+    }, 0);
+    return totalHours / completed.length;
+  }
+
+  private mapVehicleName(type: string): string {
+    switch (type) {
+      case 'car':
+        return 'Ô tô';
+      case 'motorcycle':
+        return 'Xe máy';
+      case 'truck':
+        return 'Xe tải';
+      default:
+        return type;
+    }
   }
 
   private buildLineSeries<T>(items: T[], projector: (item: T) => number): LineNode<T>[] {
-    const max = Math.max(...items.map((item) => projector(item)));
+    if (!items.length) {
+      return [];
+    }
+    const max = Math.max(...items.map((item) => projector(item)), 1);
     const steps = Math.max(items.length - 1, 1);
     return items.map((item, index) => {
       const x = (index / steps) * 100;
@@ -150,29 +270,36 @@ export class StatisticsComponent {
     });
   }
 
-  private buildPieBackground(): string {
+  private buildPieBackground(data: VehicleType[]): string {
+    if (!data.length) {
+      return 'conic-gradient(#e5e7eb 0% 100%)';
+    }
+    const total = data.reduce((sum, item) => sum + item.value, 0);
     let current = 0;
     const segments: string[] = [];
-    this.vehicleTypeData.forEach((item) => {
-      const next = current + item.value;
+    data.forEach((item) => {
+      const next = current + (item.value / total) * 100;
       segments.push(`${item.color} ${current}% ${next}%`);
       current = next;
     });
     return `conic-gradient(${segments.join(', ')})`;
   }
 
-  private buildDualLineChart(): { revenue: LineNode<RevenuePoint>[]; vehicles: LineNode<RevenuePoint>[] } {
-    const revenueMax = Math.max(...this.revenueByMonth.map((item) => item.revenue));
-    const vehiclesMax = Math.max(...this.revenueByMonth.map((item) => item.vehicles));
-    const steps = Math.max(this.revenueByMonth.length - 1, 1);
+  private buildDualLineChart(data: RevenuePoint[]): { revenue: LineNode<RevenuePoint>[]; vehicles: LineNode<RevenuePoint>[] } {
+    if (!data.length) {
+      return { revenue: [], vehicles: [] };
+    }
+    const revenueMax = Math.max(...data.map((item) => item.revenue), 1);
+    const vehiclesMax = Math.max(...data.map((item) => item.vehicles), 1);
+    const steps = Math.max(data.length - 1, 1);
 
-    const revenue = this.revenueByMonth.map((item, index) => {
+    const revenue = data.map((item, index) => {
       const x = (index / steps) * 100;
       const y = 100 - (item.revenue / revenueMax) * 100;
       return { ...item, x, y };
     });
 
-    const vehicles = this.revenueByMonth.map((item, index) => {
+    const vehicles = data.map((item, index) => {
       const x = (index / steps) * 100;
       const y = 100 - (item.vehicles / vehiclesMax) * 100;
       return { ...item, x, y };

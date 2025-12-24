@@ -1,0 +1,45 @@
+<div class="auth-page">
+  <div class="auth-card">
+    <div class="auth-card__header">
+      <div class="auth-logo">
+        <svg viewBox="0 0 32 32" aria-hidden="true">
+          <rect x="3" y="8" width="26" height="12" rx="6" ry="6"></rect>
+          <path d="M6 20h20v4H6z"></path>
+          <circle cx="11" cy="25" r="2.3"></circle>
+          <circle cx="21" cy="25" r="2.3"></circle>
+        </svg>
+      </div>
+      <div>
+        <h1>Đăng nhập Smart Parking</h1>
+        <p>Quản lý bãi đỗ xe của bạn an toàn và nhanh chóng</p>
+      </div>
+    </div>
+
+    <form class="auth-form" [formGroup]="form" (ngSubmit)="handleSubmit()">
+      <label class="form-field">
+        <span>Email</span>
+        <input type="email" formControlName="email" placeholder="admin@example.com" />
+        <small *ngIf="form.get('email')?.touched && form.get('email')?.invalid">
+          Vui lòng nhập email hợp lệ
+        </small>
+      </label>
+
+      <label class="form-field">
+        <span>Mật khẩu</span>
+        <input type="password" formControlName="password" placeholder="••••••" />
+        <small *ngIf="form.get('password')?.touched && form.get('password')?.invalid">
+          Mật khẩu tối thiểu 6 ký tự
+        </small>
+      </label>
+
+      <div class="auth-actions">
+        <button type="submit" [disabled]="loading">
+          {{ loading ? 'Đang đăng nhập...' : 'Đăng nhập' }}
+        </button>
+      </div>
+
+      <p class="error" *ngIf="error">{{ error }}</p>
+    </form>
+  </div>
+</div>
+

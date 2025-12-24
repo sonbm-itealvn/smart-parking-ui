@@ -26,6 +26,20 @@
   font-size: 0.875rem;
 }
 
+.callout {
+  margin: 12px 0;
+  padding: 12px 14px;
+  border-radius: 10px;
+  background: #fef2f2;
+  color: #b91c1c;
+  border: 1px solid #fecdd3;
+}
+
+.loading {
+  margin: 12px 0;
+  color: #475467;
+}
+
 /* Summary Stats */
 .summary-grid {
   display: grid;

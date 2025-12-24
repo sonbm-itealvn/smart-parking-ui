@@ -1,74 +1,64 @@
 ﻿import { CommonModule } from '@angular/common';
-import { Component } from '@angular/core';
+import { Component, OnInit, inject } from '@angular/core';
+import { FormsModule } from '@angular/forms';
+import { finalize, forkJoin, switchMap } from 'rxjs';
+import { ApiClientService } from '../../core/services/api-client.service';
+import { ParkingSession, ParkingSlot, Vehicle as ApiVehicle } from '../../core/models/api.models';
 
 type VehicleStatus = 'parked' | 'exited';
 
-type Vehicle = {
-  id: number;
+type VehicleRow = {
+  sessionId: number;
+  vehicleId: number;
   plate: string;
-  spot: string;
+  slot: string;
   entryTime: string;
   exitTime?: string;
   duration?: string;
   fee?: number;
   status: VehicleStatus;
-  vehicleType: 'Ô tô' | 'Xe máy';
+  vehicleType: string;
 };
 
 @Component({
   selector: 'app-vehicle-management-page',
   standalone: true,
-  imports: [CommonModule],
+  imports: [CommonModule, FormsModule],
   templateUrl: './vehicle-management.component.html',
   styleUrl: './vehicle-management.component.scss'
 })
-export class VehicleManagementComponent {
+export class VehicleManagementComponent implements OnInit {
+  private readonly api = inject(ApiClientService);
+
   searchQuery = '';
   showAddModal = false;
-  selectedVehicle: Vehicle | null = null;
+  selectedVehicle: VehicleRow | null = null;
   filterStatus: 'all' | VehicleStatus = 'all';
 
-  vehicles: Vehicle[] = [
-    { id: 1, plate: '29A-12345', spot: 'A-15', entryTime: '2025-11-30 08:30', status: 'parked', vehicleType: 'Ô tô' },
-    {
-      id: 2,
-      plate: '30B-67890',
-      spot: 'B-08',
-      entryTime: '2025-11-30 09:15',
-      exitTime: '2025-11-30 10:25',
-      duration: '1h 10p',
-      fee: 30000,
-      status: 'exited',
-      vehicleType: 'Ô tô'
-    },
-    { id: 3, plate: '51C-11111', spot: 'C-22', entryTime: '2025-11-30 10:20', status: 'parked', vehicleType: 'Xe máy' },
-    {
-      id: 4,
-      plate: '92D-99999',
-      spot: 'A-03',
-      entryTime: '2025-11-30 07:45',
-      exitTime: '2025-11-30 10:15',
-      duration: '2h 30p',
-      fee: 50000,
-      status: 'exited',
-      vehicleType: 'Ô tô'
-    },
-    { id: 5, plate: '43E-55555', spot: 'D-17', entryTime: '2025-11-30 10:10', status: 'parked', vehicleType: 'Ô tô' }
-  ];
+  vehicles: VehicleRow[] = [];
+  parkingSlots: ParkingSlot[] = [];
 
-  newVehicle: { plate: string; spot: string; vehicleType: 'Ô tô' | 'Xe máy' } = {
+  loading = true;
+  submitting = false;
+  error: string | null = null;
+
+  newVehicle: { plate: string; parkingSlotId?: number; vehicleType: 'car' | 'motorcycle' | 'truck' } = {
     plate: '',
-    spot: '',
-    vehicleType: 'Ô tô'
+    parkingSlotId: undefined,
+    vehicleType: 'car'
   };
 
-  get filteredVehicles(): Vehicle[] {
+  ngOnInit(): void {
+    this.loadData();
+  }
+
+  get filteredVehicles(): VehicleRow[] {
     return this.vehicles.filter((vehicle) => {
       const query = this.searchQuery.trim().toLowerCase();
       const searchMatch =
         !query ||
         vehicle.plate.toLowerCase().includes(query) ||
-        vehicle.spot.toLowerCase().includes(query);
+        vehicle.slot.toLowerCase().includes(query);
       const statusMatch = this.filterStatus === 'all' || vehicle.status === this.filterStatus;
       return searchMatch && statusMatch;
     });
@@ -83,58 +73,125 @@ export class VehicleManagementComponent {
   }
 
   handleAddVehicle(): void {
-    if (!this.newVehicle.plate || !this.newVehicle.spot) {
+    if (!this.newVehicle.plate || this.newVehicle.parkingSlotId === undefined) {
+      this.error = 'Vui lòng nhập biển số và chọn vị trí đỗ.';
       return;
     }
 
-    const now = new Date();
-    const formatted = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+    this.submitting = true;
+    this.error = null;
 
-    this.vehicles = [
-      ...this.vehicles,
-      {
-        id: this.vehicles.length + 1,
-        plate: this.newVehicle.plate,
-        spot: this.newVehicle.spot,
-        entryTime: formatted,
-        status: 'parked',
-        vehicleType: this.newVehicle.vehicleType
-      }
-    ];
-
-    this.newVehicle = { plate: '', spot: '', vehicleType: 'Ô tô' };
-    this.showAddModal = false;
+    // Create vehicle first, then create parking session for the selected slot
+    this.api
+      .createVehicle({ licensePlate: this.newVehicle.plate, vehicleType: this.newVehicle.vehicleType })
+      .pipe(
+        switchMap((vehicle: ApiVehicle) =>
+          this.api.createParkingSession({
+            vehicleId: vehicle.id,
+            parkingSlotId: this.newVehicle.parkingSlotId
+          })
+        ),
+        finalize(() => (this.submitting = false))
+      )
+      .subscribe({
+        next: () => {
+          this.showAddModal = false;
+          this.newVehicle = { plate: '', parkingSlotId: undefined, vehicleType: 'car' };
+          this.loadData();
+        },
+        error: () => {
+          this.error = 'Không thể thêm xe. Vui lòng kiểm tra lại thông tin hoặc quyền truy cập.';
+        }
+      });
   }
 
-  handleCheckout(vehicle: Vehicle): void {
-    const entryTime = new Date(vehicle.entryTime);
-    const exitTime = new Date();
-    const minutes = Math.floor((exitTime.getTime() - entryTime.getTime()) / (1000 * 60));
-    const hours = Math.floor(minutes / 60);
-    const remainderMinutes = minutes % 60;
-    const baseFee = vehicle.vehicleType === 'Ô tô' ? 20000 : 10000;
-    const fee = baseFee + hours * 15000;
-
-    this.vehicles = this.vehicles.map((v) =>
-      v.id === vehicle.id
-        ? {
-            ...v,
-            status: 'exited',
-            exitTime: `${exitTime.getFullYear()}-${String(exitTime.getMonth() + 1).padStart(2, '0')}-${String(exitTime.getDate()).padStart(2, '0')} ${String(exitTime.getHours()).padStart(2, '0')}:${String(exitTime.getMinutes()).padStart(2, '0')}`,
-            duration: `${hours}h ${remainderMinutes}p`,
-            fee
-          }
-        : v
-    );
-
-    this.selectedVehicle = null;
+  handleCheckout(vehicle: VehicleRow): void {
+    this.submitting = true;
+    this.api
+      .exitParkingSession(vehicle.sessionId)
+      .pipe(finalize(() => (this.submitting = false)))
+      .subscribe({
+        next: (response) => {
+          const session = response.parkingSession;
+          this.vehicles = this.vehicles.map((v) =>
+            v.sessionId === vehicle.sessionId
+              ? {
+                  ...v,
+                  status: session.status === 'completed' ? 'exited' : v.status,
+                  exitTime: session.exitTime || v.exitTime,
+                  fee: session.fee ?? v.fee,
+                  duration: this.buildDuration(vehicle.entryTime, session.exitTime || new Date().toISOString())
+                }
+              : v
+          );
+          this.selectedVehicle = null;
+        },
+        error: () => {
+          this.error = 'Không thể thực hiện xuất xe. Vui lòng thử lại.';
+        }
+      });
   }
 
-  openCheckout(vehicle: Vehicle): void {
+  openCheckout(vehicle: VehicleRow): void {
     this.selectedVehicle = vehicle;
   }
 
-  trackByVehicle(_: number, vehicle: Vehicle): number {
-    return vehicle.id;
+  trackByVehicle(_: number, vehicle: VehicleRow): number {
+    return vehicle.sessionId;
+  }
+
+  private loadData(): void {
+    this.loading = true;
+    this.error = null;
+
+    forkJoin({
+      sessions: this.api.getParkingSessions(),
+      vehicles: this.api.getVehicles(),
+      slots: this.api.getParkingSlots()
+    })
+      .pipe(finalize(() => (this.loading = false)))
+      .subscribe({
+        next: ({ sessions, vehicles, slots }) => {
+          this.parkingSlots = slots.filter((slot) => slot.status === 'available');
+          this.vehicles = this.composeRows(sessions, vehicles, slots);
+        },
+        error: () => {
+          this.error = 'Không tải được danh sách phương tiện.';
+        }
+      });
+  }
+
+  private composeRows(sessions: ParkingSession[], vehicles: ApiVehicle[], slots: ParkingSlot[]): VehicleRow[] {
+    const vehicleMap = new Map(vehicles.map((v) => [v.id, v]));
+    const slotMap = new Map(slots.map((slot) => [slot.id, slot]));
+
+    return sessions.map((session) => {
+      const vehicle = vehicleMap.get(session.vehicleId);
+      const slot = slotMap.get(session.parkingSlotId);
+      const isExited = session.status !== 'active';
+      return {
+        sessionId: session.id,
+        vehicleId: session.vehicleId,
+        plate: vehicle?.licensePlate || 'N/A',
+        slot: slot?.slotCode || 'N/A',
+        entryTime: new Date(session.entryTime).toLocaleString(),
+        exitTime: session.exitTime ? new Date(session.exitTime).toLocaleString() : undefined,
+        duration: session.exitTime
+          ? this.buildDuration(session.entryTime, session.exitTime)
+          : undefined,
+        fee: session.fee,
+        status: isExited ? 'exited' : 'parked',
+        vehicleType: vehicle?.vehicleType || 'unknown'
+      };
+    });
+  }
+
+  private buildDuration(entry: string, exit: string): string {
+    const entryDate = new Date(entry);
+    const exitDate = new Date(exit);
+    const minutes = Math.max(0, Math.floor((exitDate.getTime() - entryDate.getTime()) / (1000 * 60)));
+    const hours = Math.floor(minutes / 60);
+    const remainder = minutes % 60;
+    return `${hours}h ${remainder}p`;
   }
 }

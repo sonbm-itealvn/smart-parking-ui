@@ -60,21 +60,44 @@
     </nav>
 
     <div class="sidebar__footer">
-      <button type="button" class="nav-link is-settings">
+      <div class="user-card" *ngIf="user$ | async as user">
+        <div class="avatar">{{ user.fullName.charAt(0) || 'U' }}</div>
+        <div class="user-meta">
+          <p class="user-name">{{ user.fullName }}</p>
+          <p class="user-email">{{ user.email }}</p>
+        </div>
+      </div>
+      <button type="button" class="nav-link is-settings" (click)="handleLogout()">
         <span class="nav-icon">
           <svg viewBox="0 0 24 24" aria-hidden="true">
-            <path d="M12 9.5a2.5 2.5 0 1 1 0 5 2.5 2.5 0 0 1 0-5z"></path>
-            <path
-              d="M19.4 14.5a6 6 0 0 0 0-5l1.8-1-2-3.5-2.1.6a6.21 6.21 0 0 0-2.4-1.3L14.3 2h-4.6l-.4 2.3a6.21 6.21 0 0 0-2.4 1.3l-2.1-.6-2 3.5 1.8 1a6 6 0 0 0 0 5l-1.8 1 2 3.5 2.1-.6a6.21 6.21 0 0 0 2.4-1.3l.4 2.3h4.6l.4-2.3a6.21 6.21 0 0 0 2.4-1.3l2.1.6 2-3.5z"
-            ></path>
+            <path d="M5 12h14"></path>
+            <path d="M12 5l7 7-7 7"></path>
+            <path d="M5 5v14"></path>
           </svg>
         </span>
-        <span>Cài đặt</span>
+        <span>Đăng xuất</span>
       </button>
     </div>
   </aside>
 
   <section class="content-area">
+    <header class="topbar">
+      <div class="topbar__title">
+        <p>Smart Parking Portal</p>
+        <small>Bảng điều khiển & vận hành bãi đỗ</small>
+      </div>
+      <div class="topbar__actions" *ngIf="user$ | async as user">
+        <div class="user-pill">
+          <div class="avatar">{{ user.fullName.charAt(0) || 'U' }}</div>
+          <div>
+            <p class="pill-name">{{ user.fullName }}</p>
+            <p class="pill-email">{{ user.email }}</p>
+          </div>
+        </div>
+        <button type="button" class="ghost" (click)="handleLogout()">Đăng xuất</button>
+      </div>
+    </header>
+
     <router-outlet />
   </section>
 </div>

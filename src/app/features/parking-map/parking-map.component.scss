@@ -23,6 +23,20 @@
   font-size: 0.875rem;
 }
 
+.callout {
+  margin-bottom: 16px;
+  padding: 12px 14px;
+  border-radius: 10px;
+  background: #fef2f2;
+  color: #b91c1c;
+  border: 1px solid #fecdd3;
+}
+
+.loading {
+  margin-bottom: 16px;
+  color: #475467;
+}
+
 /* Stats Grid */
 .stats-grid {
   display: grid;

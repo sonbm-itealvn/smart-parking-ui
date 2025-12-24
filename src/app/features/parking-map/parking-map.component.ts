@@ -1,13 +1,17 @@
 ﻿import { CommonModule } from '@angular/common';
-import { Component } from '@angular/core';
+import { Component, OnInit, inject } from '@angular/core';
+import { finalize, forkJoin } from 'rxjs';
+import { ApiClientService } from '../../core/services/api-client.service';
+import { ParkingSession, ParkingSlot, ParkingSlotStatus, ParkingLot, Vehicle } from '../../core/models/api.models';
 
-type SpotStatus = 'available' | 'occupied';
+type SpotStatus = ParkingSlotStatus;
 
 interface ParkingSpot {
   id: string;
   status: SpotStatus;
   vehicle?: string;
   time?: string;
+  parkingLotId?: number;
 }
 
 interface CameraFeed {
@@ -27,27 +31,22 @@ type StatKey = 'total' | 'available' | 'occupied';
   templateUrl: './parking-map.component.html',
   styleUrl: './parking-map.component.scss'
 })
-export class ParkingMapComponent {
-  private readonly zones = ['A', 'B', 'C', 'D'];
-  private readonly spotsPerZone = 25;
-  private readonly vehicles = ['29A-12345', '30B-67890', '51C-11111', '92D-99999', '43E-55555'];
-  private readonly statuses: SpotStatus[] = ['available', 'occupied'];
-
-  readonly spots: ParkingSpot[] = this.generateSpots();
+export class ParkingMapComponent implements OnInit {
+  private readonly api = inject(ApiClientService);
 
   readonly cameras: CameraFeed[] = [
     {
       id: 1,
-      name: 'Khu vực A - Tổng quan',
-      location: 'Khu vực A',
-      imageUrl: 'https://images.unsplash.com/photo-1656644177899-a83d045640e9?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3Nzg4Nzd8MHwxfHNlYXJjaHwxfHxwYXJraW5nJTIwbG90JTIwYWVyaWFsJTIwdmlld3xlbnwxfHx8fDE3NjQ0NjkxODB8MA&ixlib=rb-4.1.0&q=80&w=1080&utm_source=figma&utm_medium=referral',
+      name: 'Tổng quan bãi xe',
+      location: 'Khu vực trung tâm',
+      imageUrl: 'https://images.unsplash.com/photo-1502877828070-33b167ad6860?auto=format&fit=crop&w=1200&q=80',
       status: 'active'
     },
     {
       id: 2,
-      name: 'Khu vực B - Camera giám sát',
-      location: 'Khu vực B',
-      imageUrl: 'https://images.unsplash.com/photo-1653750366046-289780bd8125?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3Nzg4Nzd8MHwxfHNlYXJjaHwxfHxjYXIlMjBwYXJrJTIwc2VjdXJpdHklMjBjYW1lcmF8ZW58MXx8fHwxNzY0NDY5MTgwfDA&ixlib=rb-4.1.0&q=80&w=1080&utm_source=figma&utm_medium=referral',
+      name: 'Lối vào chính',
+      location: 'Cổng A',
+      imageUrl: 'https://images.unsplash.com/photo-1503736334956-4c8f8e92946d?auto=format&fit=crop&w=1200&q=80',
       status: 'active'
     }
   ];
@@ -58,41 +57,49 @@ export class ParkingMapComponent {
     { key: 'occupied', label: 'Đang đỗ', indicator: 'occupied' }
   ];
 
-  readonly zoneFilters = [
-    { value: 'all', label: 'Tất cả khu vực' },
-    ...this.zones.map((zone) => ({ value: zone, label: `Khu vực ${zone}` }))
-  ];
+  parkingLots: ParkingLot[] = [];
+  spots: ParkingSpot[] = [];
 
   searchQuery = '';
   selectedZone = 'all';
   selectedCameraId: number | null = null;
   readonly now = new Date();
+  loading = true;
+  error: string | null = null;
+
+  get zoneFilters() {
+    return [{ value: 'all', label: 'Tất cả khu vực' }, ...this.parkingLots.map((lot) => ({ value: String(lot.id), label: lot.name }))];
+  }
 
   get stats(): Record<StatKey, number> {
     return {
-      total: this.spots.length,
-      available: this.spots.filter((spot) => spot.status === 'available').length,
-      occupied: this.spots.filter((spot) => spot.status === 'occupied').length
+      total: this.filteredSpots.length,
+      available: this.filteredSpots.filter((spot) => spot.status === 'available').length,
+      occupied: this.filteredSpots.filter((spot) => spot.status === 'occupied').length
     };
   }
 
   get filteredSpots(): ParkingSpot[] {
-    const zone = this.selectedZone.toLowerCase();
+    const selectedLotId = this.selectedZone;
     const query = this.searchQuery.trim().toLowerCase();
 
     return this.spots.filter((spot) => {
-      const zoneMatch = zone === 'all' || spot.id.toLowerCase().startsWith(zone);
+      const lotMatch = selectedLotId === 'all' || String(spot.parkingLotId) === selectedLotId;
       const searchMatch =
         !query ||
         spot.id.toLowerCase().includes(query) ||
         (spot.vehicle?.toLowerCase().includes(query) ?? false);
 
-      return zoneMatch && searchMatch;
+      return lotMatch && searchMatch;
     });
   }
 
   get activeCamera(): CameraFeed | null {
     return this.selectedCameraId ? this.cameras.find((cam) => cam.id === this.selectedCameraId) ?? null : null;
+  }
+
+  ngOnInit(): void {
+    this.loadData();
   }
 
   handleSearch(value: string): void {
@@ -117,6 +124,8 @@ export class ParkingMapComponent {
         return 'Trống';
       case 'occupied':
         return 'Đang đỗ';
+      case 'out_of_service':
+        return 'Bảo trì';
       default:
         return status;
     }
@@ -126,23 +135,45 @@ export class ParkingMapComponent {
     return spot.id;
   }
 
-  private generateSpots(): ParkingSpot[] {
-    const spots: ParkingSpot[] = [];
+  private loadData(): void {
+    this.loading = true;
+    this.error = null;
+    forkJoin({
+      slots: this.api.getParkingSlots(),
+      sessions: this.api.getParkingSessions(),
+      vehicles: this.api.getVehicles(),
+      lots: this.api.getParkingLots()
+    })
+      .pipe(finalize(() => (this.loading = false)))
+      .subscribe({
+        next: ({ slots, sessions, vehicles, lots }) => {
+          this.parkingLots = lots;
+          this.spots = this.hydrateSlots(slots, sessions, vehicles);
+        },
+        error: () => {
+          this.error = 'Không tải được sơ đồ bãi xe từ máy chủ.';
+        }
+      });
+  }
 
-    this.zones.forEach((zone) => {
-      for (let i = 1; i <= this.spotsPerZone; i += 1) {
-        const status = this.statuses[Math.floor(Math.random() * this.statuses.length)];
-        const isOccupied = status === 'occupied';
-
-        spots.push({
-          id: `${zone}-${i.toString().padStart(2, '0')}`,
-          status,
-          vehicle: isOccupied ? this.vehicles[Math.floor(Math.random() * this.vehicles.length)] : undefined,
-          time: isOccupied ? `${Math.floor(Math.random() * 4)}h ${Math.floor(Math.random() * 60)}p` : undefined
-        });
-      }
+  private hydrateSlots(slots: ParkingSlot[], sessions: ParkingSession[], vehicles: Vehicle[]): ParkingSpot[] {
+    const activeSessions = sessions.filter((session) => session.status === 'active');
+    const vehicleMap = new Map(vehicles.map((v) => [v.id, v]));
+    const sessionBySlot = new Map<number, ParkingSession>();
+    activeSessions.forEach((session) => {
+      sessionBySlot.set(session.parkingSlotId, session);
     });
 
-    return spots;
+    return slots.map((slot) => {
+      const session = sessionBySlot.get(slot.id);
+      const vehicle = session ? vehicleMap.get(session.vehicleId) : undefined;
+      return {
+        id: slot.slotCode,
+        status: slot.status,
+        vehicle: vehicle?.licensePlate,
+        time: session ? new Date(session.entryTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : undefined,
+        parkingLotId: slot.parkingLotId
+      };
+    });
   }
 }

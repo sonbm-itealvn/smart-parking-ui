@@ -4,11 +4,17 @@ import { ParkingMapComponent } from './features/parking-map/parking-map.componen
 import { StatisticsComponent } from './features/statistics/statistics.component';
 import { VehicleManagementComponent } from './features/vehicle-management/vehicle-management.component';
 import { MasterLayoutComponent } from './layouts/master-layout/master-layout.component';
+import { authGuard } from './core/guards/auth.guard';
 
 export const routes: Routes = [
   {
+    path: 'login',
+    loadComponent: () => import('./features/auth/login.component').then((m) => m.LoginComponent)
+  },
+  {
     path: '',
     component: MasterLayoutComponent,
+    canActivate: [authGuard],
     children: [
       { path: '', component: DashboardComponent },
       { path: 'parking-map', component: ParkingMapComponent },

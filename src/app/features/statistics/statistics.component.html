@@ -4,9 +4,12 @@
     <p class="statistics__subtitle">Phân tích chi tiết hoạt động bãi đỗ xe</p>
   </div>
 
+  <div class="callout" *ngIf="error">{{ error }}</div>
+  <div class="loading" *ngIf="loading">Đang tải dữ liệu...</div>
+
   <!-- Summary Stats -->
-  <div class="summary-grid">
-    <div class="summary-card" *ngFor="let card of summaryCards">
+  <div class="summary-grid" *ngIf="!loading">
+    <div class="summary-card" *ngFor="let card of summaryCards()">
       <div class="summary-card__top">
         <div class="summary-card__icon" [ngClass]="'is-' + card.color">
           <ng-container [ngSwitch]="card.color">
@@ -46,7 +49,7 @@
     <div class="dual-line-chart">
       <svg viewBox="0 0 100 100" preserveAspectRatio="none">
         <polyline
-          [attr.points]="revenueChartRevenuePath"
+          [attr.points]="revenueChartRevenuePath()"
           fill="none"
           stroke="#3b82f6"
           stroke-width="2"
@@ -54,7 +57,7 @@
           stroke-linejoin="round"
         ></polyline>
         <polyline
-          [attr.points]="revenueChartVehiclesPath"
+          [attr.points]="revenueChartVehiclesPath()"
           fill="none"
           stroke="#10b981"
           stroke-width="2"
@@ -62,14 +65,14 @@
           stroke-linejoin="round"
         ></polyline>
         <circle
-          *ngFor="let point of revenueChart.revenue; trackBy: trackByMonth"
+          *ngFor="let point of revenueChart().revenue; trackBy: trackByMonth"
           [attr.cx]="point.x"
           [attr.cy]="point.y"
           r="4"
           fill="#3b82f6"
         ></circle>
         <circle
-          *ngFor="let point of revenueChart.vehicles; trackBy: trackByMonth"
+          *ngFor="let point of revenueChart().vehicles; trackBy: trackByMonth"
           [attr.cx]="point.x"
           [attr.cy]="point.y"
           r="4"
@@ -87,7 +90,7 @@
         </span>
       </div>
       <div class="chart-labels">
-        <span *ngFor="let point of revenueByMonth; trackBy: trackByMonth">{{ point.month }}</span>
+        <span *ngFor="let point of revenueByMonth(); trackBy: trackByMonth">{{ point.month }}</span>
       </div>
     </div>
   </div>
@@ -99,10 +102,10 @@
       <h3 class="chart-panel__title">Phân bổ loại phương tiện</h3>
       <div class="pie-chart">
         <div class="pie-chart__circle">
-          <div class="pie-chart__ring" [style.background]="vehiclePieBackground"></div>
+          <div class="pie-chart__ring" [style.background]="vehiclePieBackground()"></div>
         </div>
         <div class="pie-chart__legend">
-          <div *ngFor="let item of vehicleTypeData; trackBy: trackByType" class="legend-item">
+          <div *ngFor="let item of vehicleTypeData(); trackBy: trackByType" class="legend-item">
             <span class="dot" [style.background-color]="item.color"></span>
             <span>{{ item.name }}</span>
           </div>
@@ -114,8 +117,8 @@
     <div class="chart-panel">
       <h3 class="chart-panel__title">Giờ cao điểm</h3>
       <div class="bar-chart">
-        <div class="bar" *ngFor="let hour of peakHours; trackBy: trackByHour">
-          <div class="bar__fill" [style.height.%]="(hour.count / maxPeak) * 100"></div>
+        <div class="bar" *ngFor="let hour of peakHours(); trackBy: trackByHour">
+          <div class="bar__fill" [style.height.%]="maxPeak() ? (hour.count / maxPeak()) * 100 : 0"></div>
           <span class="bar__label">{{ hour.hour }}</span>
         </div>
       </div>
@@ -130,7 +133,7 @@
       <div class="line-chart">
         <svg viewBox="0 0 100 100" preserveAspectRatio="none">
           <polyline
-            [attr.points]="averageDurationPath"
+            [attr.points]="averageDurationPath()"
             fill="none"
             stroke="#f59e0b"
             stroke-width="2"
@@ -138,7 +141,7 @@
             stroke-linejoin="round"
           ></polyline>
           <circle
-            *ngFor="let point of averageDurationLine; trackBy: trackByDuration"
+            *ngFor="let point of averageDurationLine(); trackBy: trackByDuration"
             [attr.cx]="point.x"
             [attr.cy]="point.y"
             r="4"
@@ -146,7 +149,7 @@
           ></circle>
         </svg>
         <div class="chart-labels">
-          <span *ngFor="let point of averageDuration; trackBy: trackByDuration">{{ point.day }}</span>
+          <span *ngFor="let point of averageDuration(); trackBy: trackByDuration">{{ point.day }}</span>
         </div>
       </div>
     </div>
@@ -155,7 +158,7 @@
     <div class="chart-panel">
       <h3 class="chart-panel__title">Top 5 vị trí được sử dụng nhiều nhất</h3>
       <div class="top-spots">
-        <div *ngFor="let spot of topSpots; let i = index; trackBy: trackBySpot" class="top-spot-item">
+        <div *ngFor="let spot of topSpots(); let i = index; trackBy: trackBySpot" class="top-spot-item">
           <div class="top-spot-row">
             <div class="top-spot-label">
               <div class="rank-badge">{{ i + 1 }}</div>

@@ -6,8 +6,11 @@
     </div>
   </div>
 
+  <div class="callout" *ngIf="error">{{ error }}</div>
+  <div class="loading" *ngIf="loading">Đang tải dữ liệu...</div>
+
   <!-- Stats -->
-  <div class="stats-grid">
+  <div class="stats-grid" *ngIf="!loading">
     <div class="stat-card">
       <p class="stat-label">Tổng số chỗ</p>
       <p class="stat-value">{{ stats.total }}</p>
@@ -29,7 +32,7 @@
   </div>
 
   <!-- Camera Feeds Section -->
-  <div class="camera-panel">
+  <div class="camera-panel" *ngIf="!loading">
     <div class="camera-panel__header">
       <svg class="camera-icon" viewBox="0 0 24 24" aria-hidden="true">
         <path d="M4 7h3l2-2h6l2 2h3a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V8a1 1 0 0 1 1-1z" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path>
@@ -69,7 +72,7 @@
   </div>
 
   <!-- Filters -->
-  <div class="filter-panel">
+  <div class="filter-panel" *ngIf="!loading">
     <div class="filter-row">
       <div class="search-field">
         <svg class="search-icon" viewBox="0 0 20 20" aria-hidden="true">
@@ -95,7 +98,7 @@
   </div>
 
   <!-- Parking Grid -->
-  <div class="parking-grid-panel">
+  <div class="parking-grid-panel" *ngIf="!loading">
     <div class="parking-grid">
       <div
         class="parking-slot"

@@ -1,5 +1,8 @@
 ﻿import { CommonModule } from '@angular/common';
-import { Component } from '@angular/core';
+import { Component, OnInit, computed, inject, signal } from '@angular/core';
+import { finalize, forkJoin, of } from 'rxjs';
+import { ApiClientService } from '../../core/services/api-client.service';
+import { ParkingSession, ParkingSlot, Payment, Vehicle } from '../../core/models/api.models';
 
 type StatCard = {
   title: string;
@@ -31,46 +34,25 @@ type OccupancyPoint = { time: string; rate: number };
   templateUrl: './dashboard.component.html',
   styleUrl: './dashboard.component.scss'
 })
-export class DashboardComponent {
-  readonly stats: StatCard[] = [
-    { title: 'Tổng số chỗ', value: '250', icon: 'pin', color: 'blue', change: { value: '+0%', type: 'neutral' } },
-    { title: 'Đang đỗ', value: '187', icon: 'car', color: 'green', change: { value: '+12%', type: 'up' } },
-    { title: 'Còn trống', value: '63', icon: 'pin', color: 'orange', change: { value: '-12%', type: 'down' } },
-    { title: 'Tỷ lệ sử dụng', value: '74.8%', icon: 'trend', color: 'purple', change: { value: '+5.2%', type: 'up' } }
-  ];
+export class DashboardComponent implements OnInit {
+  private readonly api = inject(ApiClientService);
 
-  readonly revenueData: RevenuePoint[] = [
-    { name: 'T2', value: 4500 },
-    { name: 'T3', value: 5200 },
-    { name: 'T4', value: 4800 },
-    { name: 'T5', value: 6100 },
-    { name: 'T6', value: 7200 },
-    { name: 'T7', value: 8500 },
-    { name: 'CN', value: 7800 }
-  ];
+  loading = true;
+  error: string | null = null;
 
-  readonly occupancyData: OccupancyPoint[] = [
-    { time: '06:00', rate: 20 },
-    { time: '09:00', rate: 85 },
-    { time: '12:00', rate: 65 },
-    { time: '15:00', rate: 70 },
-    { time: '18:00', rate: 90 },
-    { time: '21:00', rate: 45 },
-    { time: '00:00', rate: 15 }
-  ];
+  stats = signal<StatCard[]>([]);
+  revenueData = signal<RevenuePoint[]>([]);
+  occupancyData = signal<OccupancyPoint[]>([]);
+  recentActivities = signal<ActivityItem[]>([]);
 
-  readonly recentActivities: ActivityItem[] = [
-    { id: 1, type: 'in', plate: '29A-12345', time: '10:30', spot: 'A-15' },
-    { id: 2, type: 'out', plate: '30B-67890', time: '10:25', spot: 'B-08' },
-    { id: 3, type: 'in', plate: '51C-11111', time: '10:20', spot: 'C-22' },
-    { id: 4, type: 'out', plate: '92D-99999', time: '10:15', spot: 'A-03' },
-    { id: 5, type: 'in', plate: '43E-55555', time: '10:10', spot: 'D-17' }
-  ];
+  revenueMax = computed(() => Math.max(...this.revenueData().map((point) => point.value), 0));
+  occupancyChart = computed(() => this.buildLineChart());
+  occupancyPath = computed(() => this.occupancyChart().map((point) => `${point.x.toFixed(2)},${point.y.toFixed(2)}`).join(' '));
+  occupancyMax = computed(() => Math.max(...this.occupancyData().map((point) => point.rate), 0));
 
-  readonly revenueMax = Math.max(...this.revenueData.map((point) => point.value));
-  readonly occupancyChart = this.buildLineChart();
-  readonly occupancyPath = this.occupancyChart.map((point) => `${point.x.toFixed(2)},${point.y.toFixed(2)}`).join(' ');
-  readonly occupancyMax = Math.max(...this.occupancyData.map((point) => point.rate));
+  ngOnInit(): void {
+    this.loadData();
+  }
 
   trackByStat(_: number, item: StatCard): string {
     return item.title;
@@ -95,10 +77,111 @@ export class DashboardComponent {
     return change.type;
   }
 
+  private loadData(): void {
+    this.loading = true;
+    this.error = null;
+
+    forkJoin({
+      slots: this.api.getParkingSlots(),
+      sessions: this.api.getParkingSessions(),
+      payments: this.api.getPayments(),
+      vehicles: this.api.getVehicles()
+    })
+      .pipe(
+        finalize(() => {
+          this.loading = false;
+        })
+      )
+      .subscribe({
+        next: ({ slots, sessions, payments, vehicles }) => {
+          this.populateStats(slots, sessions);
+          this.populateRevenue(payments);
+          this.populateOccupancy(sessions);
+          this.populateActivities(sessions, vehicles, slots);
+        },
+        error: () => {
+          this.error = 'Không tải được dữ liệu tổng quan từ máy chủ.';
+        }
+      });
+  }
+
+  private populateStats(slots: ParkingSlot[], sessions: ParkingSession[]): void {
+    const totalSlots = slots.length;
+    const occupied = slots.filter((slot) => slot.status === 'occupied').length;
+    const available = slots.filter((slot) => slot.status === 'available').length;
+    const utilization = totalSlots ? ((occupied / totalSlots) * 100).toFixed(1) : '0';
+
+    this.stats.set([
+      { title: 'Tổng số chỗ', value: `${totalSlots}`, icon: 'pin', color: 'blue' },
+      { title: 'Đang đỗ', value: `${occupied}`, icon: 'car', color: 'green' },
+      { title: 'Còn trống', value: `${available}`, icon: 'pin', color: 'orange' },
+      { title: 'Tỷ lệ sử dụng', value: `${utilization}%`, icon: 'trend', color: 'purple' }
+    ]);
+  }
+
+  private populateRevenue(payments: Payment[]): void {
+    const weekdays = ['CN', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7'];
+    const now = new Date();
+    const last7Days = payments.filter((payment) => {
+      const day = new Date(payment.paymentTime);
+      const diff = (now.getTime() - day.getTime()) / (1000 * 60 * 60 * 24);
+      return diff <= 7;
+    });
+
+    const grouped = new Array(7).fill(0);
+    last7Days.forEach((payment) => {
+      const dayIndex = new Date(payment.paymentTime).getDay();
+      grouped[dayIndex] += payment.amount;
+    });
+
+    const data: RevenuePoint[] = grouped.map((value, index) => ({
+      name: weekdays[index],
+      value: Math.round(value / 1000)
+    }));
+
+    this.revenueData.set(data);
+  }
+
+  private populateOccupancy(sessions: ParkingSession[]): void {
+    const hours = [0, 3, 6, 9, 12, 15, 18, 21];
+    const data: OccupancyPoint[] = hours.map((hour) => {
+      const count = sessions.filter((session) => {
+        const start = new Date(session.entryTime);
+        return start.getHours() === hour;
+      }).length;
+      return { time: `${hour.toString().padStart(2, '0')}:00`, rate: count };
+    });
+
+    this.occupancyData.set(data);
+  }
+
+  private populateActivities(sessions: ParkingSession[], vehicles: Vehicle[], slots: ParkingSlot[]): void {
+    const vehicleMap = new Map(vehicles.map((v) => [v.id, v]));
+    const slotMap = new Map(slots.map((s) => [s.id, s]));
+
+    const activities: ActivityItem[] = sessions
+      .sort((a, b) => new Date(b.entryTime).getTime() - new Date(a.entryTime).getTime())
+      .slice(0, 6)
+      .map((session) => {
+        const vehicle = vehicleMap.get(session.vehicleId);
+        const slot = slotMap.get(session.parkingSlotId);
+        return {
+          id: session.id,
+          type: session.status === 'active' ? 'in' : 'out',
+          plate: vehicle?.licensePlate || 'N/A',
+          time: new Date(session.entryTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          spot: slot?.slotCode || 'N/A'
+        };
+      });
+
+    this.recentActivities.set(activities);
+  }
+
   private buildLineChart() {
-    const max = Math.max(...this.occupancyData.map((point) => point.rate));
-    const steps = Math.max(this.occupancyData.length - 1, 1);
-    return this.occupancyData.map((point, index) => {
+    const occupancyData = this.occupancyData();
+    const max = Math.max(...occupancyData.map((point) => point.rate), 1);
+    const steps = Math.max(occupancyData.length - 1, 1);
+    return occupancyData.map((point, index) => {
       const x = (index / steps) * 100;
       const y = 100 - (point.rate / max) * 100;
       return { ...point, x, y };

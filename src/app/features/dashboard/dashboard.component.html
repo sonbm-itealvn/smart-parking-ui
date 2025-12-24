@@ -4,9 +4,15 @@
     <p class="dashboard__subtitle">Tổng quan hoạt động bãi đỗ xe</p>
   </div>
 
+  <div class="callout" *ngIf="error">
+    <p>{{ error }}</p>
+  </div>
+
+  <div class="loading" *ngIf="loading">Đang tải dữ liệu...</div>
+
   <!-- Stats Grid -->
-  <div class="stats-grid">
-    <div class="stat-card" *ngFor="let stat of stats; trackBy: trackByStat">
+  <div class="stats-grid" *ngIf="!loading">
+    <div class="stat-card" *ngFor="let stat of stats(); trackBy: trackByStat">
       <div class="stat-card__top">
         <div class="stat-card__icon" [ngClass]="'is-' + stat.color">
           <ng-container [ngSwitch]="stat.icon">
@@ -44,13 +50,13 @@
   </div>
 
   <!-- Charts -->
-  <div class="charts-grid">
+  <div class="charts-grid" *ngIf="!loading">
     <!-- Revenue Chart -->
     <div class="chart-panel">
       <h3 class="chart-panel__title">Doanh thu tuần (nghìn VNĐ)</h3>
       <div class="chart chart--bar">
-        <div class="bar" *ngFor="let item of revenueData; trackBy: trackByRevenue">
-          <div class="bar__fill" [style.height.%]="(item.value / revenueMax) * 100"></div>
+        <div class="bar" *ngFor="let item of revenueData(); trackBy: trackByRevenue">
+          <div class="bar__fill" [style.height.%]="revenueMax() ? (item.value / revenueMax()) * 100 : 0"></div>
           <span class="bar__label">{{ item.name }}</span>
         </div>
       </div>
@@ -62,17 +68,17 @@
       <div class="chart chart--line">
         <svg viewBox="0 0 100 100" preserveAspectRatio="none">
           <polyline
-            [attr.points]="occupancyPath"
+            [attr.points]="occupancyPath()"
             fill="none"
             stroke="#10b981"
             stroke-width="2"
             stroke-linecap="round"
             stroke-linejoin="round"
           ></polyline>
-          <circle *ngFor="let point of occupancyChart" [attr.cx]="point.x" [attr.cy]="point.y" r="4" fill="#10b981"></circle>
+          <circle *ngFor="let point of occupancyChart()" [attr.cx]="point.x" [attr.cy]="point.y" r="4" fill="#10b981"></circle>
         </svg>
         <div class="chart--line__labels">
-          <span *ngFor="let point of occupancyData; trackBy: trackByOccupancy">{{ point.time }}</span>
+          <span *ngFor="let point of occupancyData(); trackBy: trackByOccupancy">{{ point.time }}</span>
         </div>
       </div>
     </div>
@@ -94,7 +100,7 @@
           </tr>
         </thead>
         <tbody>
-          <tr *ngFor="let activity of recentActivities; trackBy: trackByActivity">
+          <tr *ngFor="let activity of recentActivities(); trackBy: trackByActivity">
             <td>
               <span class="badge" [ngClass]="activity.type === 'in' ? 'is-in' : 'is-out'">
                 <svg *ngIf="activity.type === 'in'" viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">

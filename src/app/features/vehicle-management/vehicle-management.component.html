@@ -25,6 +25,9 @@
     </article>
   </section>
 
+  <div class="callout" *ngIf="error">{{ error }}</div>
+  <div class="loading" *ngIf="loading">Đang tải dữ liệu...</div>
+
   <section class="panel filter-panel">
     <div class="filters">
       <label class="search-field">
@@ -43,7 +46,7 @@
     </div>
   </section>
 
-  <section class="panel">
+  <section class="panel" *ngIf="!loading">
     <div class="table-wrapper">
       <table>
         <thead>
@@ -63,7 +66,7 @@
           <tr *ngFor="let vehicle of filteredVehicles; trackBy: trackByVehicle">
             <td>{{ vehicle.plate }}</td>
             <td>{{ vehicle.vehicleType }}</td>
-            <td>{{ vehicle.spot }}</td>
+            <td>{{ vehicle.slot }}</td>
             <td>{{ vehicle.entryTime }}</td>
             <td>{{ vehicle.exitTime || '-' }}</td>
             <td>{{ vehicle.duration || '-' }}</td>
@@ -100,18 +103,26 @@
       <label>
         <span>Loại xe</span>
         <select [value]="newVehicle.vehicleType" (change)="newVehicle.vehicleType = $any($event.target).value">
-          <option value="Ô tô">Ô tô</option>
-          <option value="Xe máy">Xe máy</option>
+          <option value="car">Ô tô</option>
+          <option value="motorcycle">Xe máy</option>
+          <option value="truck">Xe tải</option>
         </select>
       </label>
       <label>
         <span>Vị trí đỗ</span>
-        <input type="text" [value]="newVehicle.spot" (input)="newVehicle.spot = $any($event.target).value" />
+        <select [value]="newVehicle.parkingSlotId" (change)="newVehicle.parkingSlotId = +$any($event.target).value">
+          <option [ngValue]="undefined">Chọn vị trí</option>
+          <option *ngFor="let slot of parkingSlots" [value]="slot.id">
+            {{ slot.slotCode }}
+          </option>
+        </select>
       </label>
     </div>
     <footer>
       <button type="button" class="ghost" (click)="showAddModal = false">Hủy</button>
-      <button type="button" class="primary" (click)="handleAddVehicle()">Thêm</button>
+      <button type="button" class="primary" [disabled]="submitting" (click)="handleAddVehicle()">
+        {{ submitting ? 'Đang lưu...' : 'Thêm' }}
+      </button>
     </footer>
   </div>
 </div>
@@ -134,7 +145,7 @@
       </div>
       <div class="detail-row">
         <span>Vị trí:</span>
-        <strong>{{ vehicle.spot }}</strong>
+        <strong>{{ vehicle.slot }}</strong>
       </div>
       <div class="detail-row">
         <span>Giờ vào:</span>
@@ -143,7 +154,9 @@
     </div>
     <footer>
       <button type="button" class="ghost" (click)="selectedVehicle = null">Hủy</button>
-      <button type="button" class="primary" (click)="handleCheckout(vehicle)">Xác nhận xuất xe</button>
+      <button type="button" class="primary" [disabled]="submitting" (click)="handleCheckout(vehicle)">
+        {{ submitting ? 'Đang xử lý...' : 'Xác nhận xuất xe' }}
+      </button>
     </footer>
   </div>
 </div>
