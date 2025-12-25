@@ -1,10 +1,10 @@
 export type RoleName = 'admin' | 'user' | string;
 
 export interface User {
-  id: number;
+  id: number | string;
   fullName: string;
   email: string;
-  roleId: number;
+  roleId: number | string;
   createdAt?: string;
 }
 
@@ -29,6 +29,7 @@ export interface ParkingSlot {
   parkingLotId: number;
   slotCode: string;
   status: ParkingSlotStatus;
+  coordinates?: number[][][];
 }
 
 export type VehicleType = 'car' | 'motorcycle' | 'truck';

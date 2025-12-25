@@ -1,36 +1,113 @@
 import { HttpErrorResponse, HttpInterceptorFn } from '@angular/common/http';
 import { inject } from '@angular/core';
+import { Router } from '@angular/router';
 import { catchError, switchMap, throwError } from 'rxjs';
 import { AuthService } from '../services/auth.service';
 
-const AUTH_PATHS = ['/api/auth/login', '/api/auth/register', '/api/auth/refresh-token'];
+// Public endpoints that don't require authentication
+const PUBLIC_PATHS = [
+  '/api/auth/login',
+  '/api/auth/register',
+  '/api/auth/refresh-token',
+  '/api/vehicle-detection',
+  '/health'
+];
 
 export const authInterceptor: HttpInterceptorFn = (request, next) => {
   const authService = inject(AuthService);
-  const shouldSkip = AUTH_PATHS.some((path) => request.url.includes(path));
-
-  const authReq = authService.accessToken && !shouldSkip
-    ? request.clone({ setHeaders: { Authorization: `Bearer ${authService.accessToken}` } })
-    : request;
+  const router = inject(Router);
+  
+  // Get the URL path (handle both absolute and relative URLs)
+  const url = request.url;
+  let urlPath = url;
+  
+  // If it's an absolute URL, extract the pathname
+  if (url.startsWith('http://') || url.startsWith('https://')) {
+    try {
+      urlPath = new URL(url).pathname;
+    } catch (e) {
+      // If URL parsing fails, use the original URL
+      urlPath = url;
+    }
+  }
+  
+  // Check if this is a public endpoint (match the path)
+  const isPublicPath = PUBLIC_PATHS.some((path) => {
+    // Match exact path or path that contains the public path
+    return urlPath === path || urlPath.includes(path);
+  });
+  
+  // Get current access token
+  const accessToken = authService.accessToken;
+  
+  // Add Authorization header for all non-public requests
+  let authReq = request;
+  
+  if (!isPublicPath) {
+    if (accessToken) {
+      // Clone request and add Authorization header
+      console.log('[AuthInterceptor] Adding Bearer token to request:', urlPath);
+      console.log('[AuthInterceptor] Token (first 20 chars):', accessToken.substring(0, 20) + '...');
+      authReq = request.clone({ 
+        setHeaders: { 
+          Authorization: `Bearer ${accessToken}` 
+        } 
+      });
+    } else {
+      // No token available - this should not happen if user is logged in
+      // But we'll let the request go through so server can return proper error
+      console.warn('[AuthInterceptor] No access token for protected endpoint:', urlPath);
+      console.warn('[AuthInterceptor] localStorage check:', {
+        hasAccessToken: !!localStorage.getItem('sp_access_token'),
+        hasRefreshToken: !!localStorage.getItem('sp_refresh_token')
+      });
+    }
+  } else {
+    // Debug: log public path requests
+    console.log('[AuthInterceptor] Public endpoint, skipping auth:', urlPath);
+  }
 
   return next(authReq).pipe(
     catchError((error: HttpErrorResponse) => {
-      const isUnauthorized = error.status === 401 && !shouldSkip;
-      if (isUnauthorized && authService.refreshToken) {
+      // Handle 401 (Unauthorized) - token expired or invalid
+      const isUnauthorized = error.status === 401 && !isPublicPath;
+      
+      // Handle 403 (Forbidden) - might also need token refresh if token expired
+      const isForbidden = error.status === 403 && !isPublicPath;
+      
+      // Try to refresh token if we have a refresh token
+      if ((isUnauthorized || isForbidden) && authService.refreshToken) {
+        // Try to refresh token and retry the request
         return authService.refreshTokens().pipe(
           switchMap((tokens) => {
+            // Retry the original request with new token
             const retryReq = request.clone({
-              setHeaders: { Authorization: `Bearer ${tokens.accessToken}` }
+              setHeaders: { 
+                Authorization: `Bearer ${tokens.accessToken}` 
+              }
             });
             return next(retryReq);
           }),
           catchError((refreshError) => {
-            authService.handleAuthError(refreshError);
+            // If refresh fails, it means refreshToken is also expired or invalid
+            // Only then we clear auth and redirect to login
+            console.log('[AuthInterceptor] Token refresh failed, clearing auth and redirecting to login');
+            authService.clearAuth();
+            router.navigate(['/login']);
             return throwError(() => refreshError);
           })
         );
       }
-      return authService.handleAuthError(error);
+      
+      // For 401/403 errors without refresh token, redirect to login
+      // If we have refreshToken, we already tried to refresh above
+      if ((isUnauthorized || isForbidden) && !authService.refreshToken) {
+        console.log('[AuthInterceptor] No refresh token available, redirecting to login');
+        authService.clearAuth();
+        router.navigate(['/login']);
+      }
+      
+      return throwError(() => error);
     })
   );
 };

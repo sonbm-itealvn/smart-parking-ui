@@ -22,7 +22,9 @@ export class ApiClientService {
 
   // Auth
   login(payload: { email: string; password: string }) {
-    return this.http.post<AuthResponse>(`${this.baseUrl}/api/auth/login`, payload);
+    const url = `${this.baseUrl}/api/auth/login`;
+    console.log('[ApiClientService] Login request to:', url, payload);
+    return this.http.post<AuthResponse>(url, payload);
   }
 
   register(payload: { fullName: string; email: string; password: string; roleId?: number }) {
@@ -71,6 +73,10 @@ export class ApiClientService {
     return this.http.get<ParkingLot[]>(`${this.baseUrl}/api/parking-lots`);
   }
 
+  createParkingLot(payload: Partial<ParkingLot>) {
+    return this.http.post<ParkingLot>(`${this.baseUrl}/api/parking-lots`, payload);
+  }
+
   // Parking Slots
   getParkingSlots(params?: { parkingLotId?: number }) {
     let httpParams = new HttpParams();
@@ -78,6 +84,20 @@ export class ApiClientService {
       httpParams = httpParams.set('parkingLotId', params.parkingLotId);
     }
     return this.http.get<ParkingSlot[]>(`${this.baseUrl}/api/parking-slots`, { params: httpParams });
+  }
+
+  createParkingSlot(payload: Partial<ParkingSlot>) {
+    return this.http.post<ParkingSlot>(`${this.baseUrl}/api/parking-slots`, payload);
+  }
+
+  // Upload Images
+  uploadImage(file: File, parkingLotId?: number) {
+    const formData = new FormData();
+    formData.append('file', file);
+    if (parkingLotId) {
+      formData.append('parkingLotId', parkingLotId.toString());
+    }
+    return this.http.post<{ url: string; message: string }>(`${this.baseUrl}/api/upload-images`, formData);
   }
 
   updateParkingSlot(id: number, payload: Partial<ParkingSlot>) {

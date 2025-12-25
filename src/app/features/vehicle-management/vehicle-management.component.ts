@@ -3,7 +3,7 @@ import { Component, OnInit, inject } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { finalize, forkJoin, switchMap } from 'rxjs';
 import { ApiClientService } from '../../core/services/api-client.service';
-import { ParkingSession, ParkingSlot, Vehicle as ApiVehicle } from '../../core/models/api.models';
+import { ParkingSession, ParkingSlot, Vehicle as ApiVehicle, ParkingLot } from '../../core/models/api.models';
 
 type VehicleStatus = 'parked' | 'exited';
 
@@ -35,6 +35,11 @@ export class VehicleManagementComponent implements OnInit {
   selectedVehicle: VehicleRow | null = null;
   filterStatus: 'all' | VehicleStatus = 'all';
 
+  // View state
+  selectedLotId: number | null = null; // null = list view, number = detail view
+  selectedLot: ParkingLot | null = null;
+  parkingLots: ParkingLot[] = [];
+  
   vehicles: VehicleRow[] = [];
   parkingSlots: ParkingSlot[] = [];
 
@@ -49,10 +54,25 @@ export class VehicleManagementComponent implements OnInit {
   };
 
   ngOnInit(): void {
-    this.loadData();
+    this.loadParkingLots();
+  }
+
+  selectLot(lot: ParkingLot): void {
+    this.selectedLotId = lot.id;
+    this.selectedLot = lot;
+    this.loadVehiclesForLot(lot.id);
+  }
+
+  backToList(): void {
+    this.selectedLotId = null;
+    this.selectedLot = null;
+    this.vehicles = [];
   }
 
   get filteredVehicles(): VehicleRow[] {
+    if (!this.selectedLotId) {
+      return [];
+    }
     return this.vehicles.filter((vehicle) => {
       const query = this.searchQuery.trim().toLowerCase();
       const searchMatch =
@@ -65,6 +85,9 @@ export class VehicleManagementComponent implements OnInit {
   }
 
   get stats() {
+    if (!this.selectedLotId) {
+      return { parked: 0, exited: 0, totalFee: 0 };
+    }
     const parked = this.vehicles.filter((v) => v.status === 'parked').length;
     const exitedVehicles = this.vehicles.filter((v) => v.status === 'exited');
     const exited = exitedVehicles.length;
@@ -73,34 +96,58 @@ export class VehicleManagementComponent implements OnInit {
   }
 
   handleAddVehicle(): void {
-    if (!this.newVehicle.plate || this.newVehicle.parkingSlotId === undefined) {
-      this.error = 'Vui lòng nhập biển số và chọn vị trí đỗ.';
+    if (!this.newVehicle.plate || !this.selectedLotId) {
+      this.error = 'Vui lòng nhập biển số và chọn bãi đỗ.';
       return;
     }
 
     this.submitting = true;
     this.error = null;
 
-    // Create vehicle first, then create parking session for the selected slot
+    // Use vehicle-detection API (flag: 0 = entry)
+    // This API will automatically:
+    // - Find or create vehicle (guest vehicles will have vehicleId = null)
+    // - Find available slot if slotId is not provided
+    // - Create parking session
+    const payload: {
+      licensePlate: string;
+      flag: 0;
+      parkingLotId: number;
+      slotId?: number;
+    } = {
+      licensePlate: this.newVehicle.plate,
+      flag: 0, // 0 = xe vào
+      parkingLotId: this.selectedLotId
+    };
+
+    // If user selected a specific slot, include it
+    if (this.newVehicle.parkingSlotId !== undefined) {
+      payload.slotId = this.newVehicle.parkingSlotId;
+    }
+
     this.api
-      .createVehicle({ licensePlate: this.newVehicle.plate, vehicleType: this.newVehicle.vehicleType })
-      .pipe(
-        switchMap((vehicle: ApiVehicle) =>
-          this.api.createParkingSession({
-            vehicleId: vehicle.id,
-            parkingSlotId: this.newVehicle.parkingSlotId
-          })
-        ),
-        finalize(() => (this.submitting = false))
-      )
+      .vehicleDetection(payload)
+      .pipe(finalize(() => (this.submitting = false)))
       .subscribe({
-        next: () => {
+        next: (response: any) => {
+          console.log('Vehicle entry processed:', response);
           this.showAddModal = false;
           this.newVehicle = { plate: '', parkingSlotId: undefined, vehicleType: 'car' };
-          this.loadData();
+          if (this.selectedLotId) {
+            this.loadVehiclesForLot(this.selectedLotId);
+          }
         },
-        error: () => {
-          this.error = 'Không thể thêm xe. Vui lòng kiểm tra lại thông tin hoặc quyền truy cập.';
+        error: (err) => {
+          const errorMessage = err?.error?.error || err?.error?.message || err?.message;
+          if (errorMessage?.includes('permission') || errorMessage?.includes('Access denied')) {
+            this.error = 'Bạn không có quyền thực hiện thao tác này.';
+          } else if (errorMessage?.includes('already has an active parking session')) {
+            this.error = 'Xe này đã có phiên đỗ xe đang hoạt động.';
+          } else if (errorMessage?.includes('No available parking slot')) {
+            this.error = 'Không tìm thấy vị trí đỗ trống.';
+          } else {
+            this.error = errorMessage || 'Không thể thêm xe. Vui lòng kiểm tra lại thông tin.';
+          }
         }
       });
   }
@@ -125,6 +172,9 @@ export class VehicleManagementComponent implements OnInit {
               : v
           );
           this.selectedVehicle = null;
+          if (this.selectedLotId) {
+            this.loadVehiclesForLot(this.selectedLotId);
+          }
         },
         error: () => {
           this.error = 'Không thể thực hiện xuất xe. Vui lòng thử lại.';
@@ -140,23 +190,68 @@ export class VehicleManagementComponent implements OnInit {
     return vehicle.sessionId;
   }
 
-  private loadData(): void {
+  getVehicleTypeLabel(type: string): string {
+    const labels: Record<string, string> = {
+      car: 'Ô tô',
+      motorcycle: 'Xe máy',
+      truck: 'Xe tải',
+      unknown: 'Không xác định'
+    };
+    return labels[type] || type;
+  }
+
+  formatTime(timeString: string): string {
+    try {
+      const date = new Date(timeString);
+      return date.toLocaleString('vi-VN', {
+        day: '2-digit',
+        month: '2-digit',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit'
+      });
+    } catch {
+      return timeString;
+    }
+  }
+
+  private loadParkingLots(): void {
+    this.loading = true;
+    this.error = null;
+
+    this.api
+      .getParkingLots()
+      .pipe(finalize(() => (this.loading = false)))
+      .subscribe({
+        next: (lots) => {
+          this.parkingLots = lots;
+        },
+        error: (err) => {
+          this.error = err?.error?.message || 'Không thể tải danh sách bãi đỗ.';
+        }
+      });
+  }
+
+  private loadVehiclesForLot(lotId: number): void {
     this.loading = true;
     this.error = null;
 
     forkJoin({
       sessions: this.api.getParkingSessions(),
       vehicles: this.api.getVehicles(),
-      slots: this.api.getParkingSlots()
+      slots: this.api.getParkingSlots({ parkingLotId: lotId })
     })
       .pipe(finalize(() => (this.loading = false)))
       .subscribe({
         next: ({ sessions, vehicles, slots }) => {
           this.parkingSlots = slots.filter((slot) => slot.status === 'available');
-          this.vehicles = this.composeRows(sessions, vehicles, slots);
+          // Filter sessions by slots in this lot
+          const slotIds = new Set(slots.map(s => s.id));
+          const filteredSessions = sessions.filter(s => slotIds.has(s.parkingSlotId));
+          this.vehicles = this.composeRows(filteredSessions, vehicles, slots);
         },
-        error: () => {
-          this.error = 'Không tải được danh sách phương tiện.';
+        error: (err) => {
+          this.error = err?.error?.message || 'Không tải được danh sách phương tiện.';
         }
       });
   }

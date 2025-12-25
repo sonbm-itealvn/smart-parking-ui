@@ -27,7 +27,12 @@ export class LoginComponent {
   });
 
   handleSubmit(): void {
+    console.log('[LoginComponent] Form submitted');
+    console.log('[LoginComponent] Form valid:', this.form.valid);
+    console.log('[LoginComponent] Form value:', this.form.getRawValue());
+    
     if (this.form.invalid) {
+      console.log('[LoginComponent] Form is invalid, marking as touched');
       this.form.markAllAsTouched();
       return;
     }
@@ -36,15 +41,22 @@ export class LoginComponent {
     this.error = null;
 
     const payload = this.form.getRawValue();
+    console.log('[LoginComponent] Calling authService.login with:', { email: payload.email, password: '***' });
+    
     this.authService
       .login({ email: payload.email!, password: payload.password! })
-      .pipe(finalize(() => (this.loading = false)))
+      .pipe(finalize(() => {
+        console.log('[LoginComponent] Login request completed');
+        this.loading = false;
+      }))
       .subscribe({
-        next: () => {
+        next: (response) => {
+          console.log('[LoginComponent] Login successful, redirecting...');
           const redirect = this.route.snapshot.queryParamMap.get('redirect') || '/';
           this.router.navigateByUrl(redirect);
         },
         error: (err) => {
+          console.error('[LoginComponent] Login error:', err);
           this.error = err?.error?.message || 'Đăng nhập thất bại. Vui lòng kiểm tra lại.';
         }
       });

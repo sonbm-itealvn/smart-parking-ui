@@ -1,150 +1,428 @@
 ﻿<div class="parking-map-page">
   <div class="page-header">
     <div>
-      <h2 class="page-title">Sơ đồ bãi đỗ xe</h2>
-      <p class="page-subtitle">Theo dõi trạng thái các vị trí đỗ xe</p>
+      <h2 class="page-title" *ngIf="!selectedLotId">Danh sách bãi đỗ xe</h2>
+      <h2 class="page-title" *ngIf="selectedLotId">Sơ đồ bãi đỗ xe</h2>
+      <p class="page-subtitle" *ngIf="!selectedLotId">Chọn một bãi đỗ để xem chi tiết</p>
+      <p class="page-subtitle" *ngIf="selectedLotId && selectedLot">{{ selectedLot.name }} - {{ selectedLot.location }}</p>
+    </div>
+    <div class="page-actions">
+      <button type="button" class="btn btn-ghost" *ngIf="selectedLotId" (click)="backToList()">
+        <svg viewBox="0 0 20 20" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M12 4l-6 6 6 6"></path>
+        </svg>
+        Quay lại
+      </button>
+      <button type="button" class="btn btn-primary" (click)="openAddLotModal()">
+        <svg viewBox="0 0 20 20" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M10 4v12M4 10h12"></path>
+        </svg>
+        Thêm bãi đỗ
+      </button>
+      <button type="button" class="btn btn-secondary" *ngIf="selectedLotId" (click)="openSlotEditorModal()">
+        <svg viewBox="0 0 20 20" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M10 4v12M4 10h12"></path>
+        </svg>
+        Thêm vị trí đỗ
+      </button>
     </div>
   </div>
 
   <div class="callout" *ngIf="error">{{ error }}</div>
   <div class="loading" *ngIf="loading">Đang tải dữ liệu...</div>
 
-  <!-- Stats -->
-  <div class="stats-grid" *ngIf="!loading">
-    <div class="stat-card">
-      <p class="stat-label">Tổng số chỗ</p>
-      <p class="stat-value">{{ stats.total }}</p>
-    </div>
-    <div class="stat-card">
-      <div class="stat-label-row">
-        <div class="status-dot status-dot--green"></div>
-        <p class="stat-label">Còn trống</p>
+  <!-- List View: Danh sách bãi đỗ -->
+  <div *ngIf="!selectedLotId && !loading" class="lots-grid">
+    <div class="lot-card" *ngFor="let lot of parkingLots" (click)="selectLot(lot)">
+      <div class="lot-card__header">
+        <h3 class="lot-card__title">{{ lot.name }}</h3>
+        <span class="lot-card__badge">{{ lot.totalSlots }} chỗ</span>
       </div>
-      <p class="stat-value">{{ stats.available }}</p>
-    </div>
-    <div class="stat-card">
-      <div class="stat-label-row">
-        <div class="status-dot status-dot--red"></div>
-        <p class="stat-label">Đang đỗ</p>
+      <div class="lot-card__body">
+        <p class="lot-card__location">
+          <svg viewBox="0 0 20 20" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"></path>
+            <path d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"></path>
+          </svg>
+          {{ lot.location }}
+        </p>
+        <p class="lot-card__price">{{ lot.pricePerHour | number }} VNĐ/giờ</p>
       </div>
-      <p class="stat-value">{{ stats.occupied }}</p>
+      <div class="lot-card__footer">
+        <button type="button" class="lot-card__button">Xem chi tiết</button>
+      </div>
+    </div>
+    <div class="lots-grid__empty" *ngIf="parkingLots.length === 0">
+      <p>Chưa có bãi đỗ nào. Hãy thêm bãi đỗ mới!</p>
     </div>
   </div>
 
-  <!-- Camera Feeds Section -->
-  <div class="camera-panel" *ngIf="!loading">
-    <div class="camera-panel__header">
-      <svg class="camera-icon" viewBox="0 0 24 24" aria-hidden="true">
-        <path d="M4 7h3l2-2h6l2 2h3a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V8a1 1 0 0 1 1-1z" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path>
-        <circle cx="12" cy="13" r="3" fill="none" stroke="currentColor" stroke-width="2"></circle>
-      </svg>
-      <h3 class="camera-panel__title">Camera giám sát bãi đỗ</h3>
+  <!-- Detail View: Sơ đồ bãi đỗ (hiện tại) -->
+  <div *ngIf="selectedLotId && !loading">
+    <!-- Stats -->
+    <div class="stats-grid">
+      <div class="stat-card">
+        <p class="stat-label">Tổng số chỗ</p>
+        <p class="stat-value">{{ stats.total }}</p>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label-row">
+          <div class="status-dot status-dot--green"></div>
+          <p class="stat-label">Còn trống</p>
+        </div>
+        <p class="stat-value">{{ stats.available }}</p>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label-row">
+          <div class="status-dot status-dot--red"></div>
+          <p class="stat-label">Đang đỗ</p>
+        </div>
+        <p class="stat-value">{{ stats.occupied }}</p>
+      </div>
     </div>
-    <div class="camera-grid">
-      <div
-        class="camera-card"
-        *ngFor="let camera of cameras"
-        (click)="selectCamera(camera.id)"
-      >
-        <div class="camera-thumb" [style.backgroundImage]="'url(' + camera.imageUrl + ')'">
-          <!-- Live indicator -->
-          <div class="live-pill">
-            <div class="live-pill__dot"></div>
-            <span class="live-pill__text">LIVE</span>
+
+    <!-- Camera Feeds Section -->
+    <div class="camera-panel" *ngIf="!loading">
+      <div class="camera-panel__header">
+        <svg class="camera-icon" viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M4 7h3l2-2h6l2 2h3a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V8a1 1 0 0 1 1-1z" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path>
+          <circle cx="12" cy="13" r="3" fill="none" stroke="currentColor" stroke-width="2"></circle>
+        </svg>
+        <h3 class="camera-panel__title">Camera giám sát bãi đỗ</h3>
+      </div>
+      <div class="camera-grid">
+        <div
+          class="camera-card"
+          *ngFor="let camera of cameras; trackBy: trackByCamera"
+          (click)="selectCamera(camera.id)"
+        >
+          <div class="camera-thumb" [style.backgroundImage]="'url(' + camera.imageUrl + ')'">
+            <!-- Live indicator -->
+            <div class="live-pill">
+              <div class="live-pill__dot"></div>
+              <span class="live-pill__text">LIVE</span>
+            </div>
+            <!-- Expand button -->
+            <div class="camera-expand-btn">
+              <svg viewBox="0 0 20 20" aria-hidden="true">
+                <path d="M7 3H3v4M13 17h4v-4M3 3l6 6M11 11l6 6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path>
+              </svg>
+            </div>
+            <!-- Time overlay -->
+            <div class="camera-time">
+              {{ (now | date: 'HH:mm') }}
+            </div>
           </div>
-          <!-- Expand button -->
-          <div class="camera-expand-btn">
-            <svg viewBox="0 0 20 20" aria-hidden="true">
-              <path d="M7 3H3v4M13 17h4v-4M3 3l6 6M11 11l6 6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path>
+          <div class="camera-body">
+            <p class="camera-title">{{ camera.name }}</p>
+            <p class="camera-location">{{ camera.location }}</p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Search and Filter -->
+    <section class="panel filter-panel">
+      <div class="filters">
+        <label class="search-field">
+          <input
+            type="text"
+            placeholder="Tìm kiếm vị trí đỗ..."
+            [value]="searchQuery"
+            (input)="handleSearch($any($event.target).value)"
+          />
+        </label>
+      </div>
+    </section>
+
+    <!-- Parking Spots Grid -->
+    <section class="panel spots-section" *ngIf="!loading">
+      <div class="spots-section__header">
+        <h3 class="spots-section__title">Danh sách vị trí đỗ ({{ filteredSpots.length }})</h3>
+        <div class="spots-section__filters">
+          <span class="filter-badge filter-badge--green">
+            <span class="filter-badge__dot"></span>
+            Trống: {{ availableCount }}
+          </span>
+          <span class="filter-badge filter-badge--red">
+            <span class="filter-badge__dot"></span>
+            Đang đỗ: {{ occupiedCount }}
+          </span>
+          <span class="filter-badge filter-badge--yellow" *ngIf="outOfServiceCount > 0">
+            <span class="filter-badge__dot"></span>
+            Bảo trì: {{ outOfServiceCount }}
+          </span>
+        </div>
+      </div>
+      <div class="spots-grid">
+        <div
+          class="spot-card"
+          *ngFor="let spot of filteredSpots; trackBy: trackBySpot"
+          [class.spot-card--available]="spot.status === 'available'"
+          [class.spot-card--occupied]="spot.status === 'occupied'"
+          [class.spot-card--out-of-service]="spot.status === 'out_of_service'"
+        >
+          <div class="spot-card__icon">
+            <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2">
+              <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+              <path d="M9 9h6v6H9z"></path>
             </svg>
           </div>
-          <!-- Time overlay -->
-          <div class="camera-time">
-            {{ (now | date: 'HH:mm') }}
+          <div class="spot-card__content">
+            <div class="spot-card__header">
+              <span class="spot-card__code">{{ spot.id }}</span>
+              <span class="spot-card__badge" [class.is-available]="spot.status === 'available'">
+                {{ getStatusLabel(spot.status) }}
+              </span>
+            </div>
+            <div class="spot-card__body" *ngIf="spot.vehicle">
+              <div class="spot-card__info">
+                <svg viewBox="0 0 20 20" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M3 7h14M3 13h14M5 3v4m10-4v4M3 17h14"></path>
+                </svg>
+                <span class="spot-card__vehicle">{{ spot.vehicle }}</span>
+              </div>
+              <div class="spot-card__info" *ngIf="spot.time">
+                <svg viewBox="0 0 20 20" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2">
+                  <circle cx="10" cy="10" r="8"></circle>
+                  <path d="M10 6v4l3 2"></path>
+                </svg>
+                <span class="spot-card__time">{{ spot.time }}</span>
+              </div>
+            </div>
+            <div class="spot-card__empty" *ngIf="!spot.vehicle">
+              <p>Chưa có xe đỗ</p>
+            </div>
           </div>
         </div>
-        <div class="camera-body">
-          <p class="camera-title">{{ camera.name }}</p>
-          <p class="camera-location">{{ camera.location }}</p>
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <!-- Filters -->
-  <div class="filter-panel" *ngIf="!loading">
-    <div class="filter-row">
-      <div class="search-field">
-        <svg class="search-icon" viewBox="0 0 20 20" aria-hidden="true">
-          <circle cx="9" cy="9" r="6" fill="none" stroke="currentColor" stroke-width="2"></circle>
-          <path d="M15 15l4 4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"></path>
-        </svg>
-        <input
-          type="text"
-          placeholder="Tìm kiếm vị trí hoặc biển số xe..."
-          [value]="searchQuery"
-          (input)="handleSearch($any($event.target).value)"
-        />
-      </div>
-      <div class="zone-select">
-        <svg class="filter-icon" viewBox="0 0 20 20" aria-hidden="true">
-          <path d="M3 5h14M6 10h8M9 15h2" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"></path>
-        </svg>
-        <select [value]="selectedZone" (change)="changeZone($any($event.target).value)">
-          <option *ngFor="let zone of zoneFilters" [value]="zone.value">{{ zone.label }}</option>
-        </select>
-      </div>
-    </div>
-  </div>
-
-  <!-- Parking Grid -->
-  <div class="parking-grid-panel" *ngIf="!loading">
-    <div class="parking-grid">
-      <div
-        class="parking-slot"
-        *ngFor="let spot of filteredSpots; trackBy: trackBySpot"
-        [ngClass]="'slot-' + spot.status"
-        [title]="spot.id + ' - ' + getStatusLabel(spot.status) + (spot.vehicle ? ' - ' + spot.vehicle : '')"
-      >
-        <div class="slot-text">{{ spot.id }}</div>
-        <!-- Tooltip -->
-        <div class="slot-tooltip">
-          <div>{{ spot.id }}</div>
-          <div>{{ getStatusLabel(spot.status) }}</div>
-          <div *ngIf="spot.vehicle">{{ spot.vehicle }}</div>
-          <div *ngIf="spot.time">Thời gian: {{ spot.time }}</div>
-          <div class="tooltip-arrow"></div>
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <!-- Camera Full View Modal -->
-  <div class="camera-modal" *ngIf="activeCamera as camera" (click)="closeCameraModal()">
-    <div class="camera-modal__content" (click)="$event.stopPropagation()">
-      <div class="camera-modal__header">
-        <div class="camera-modal__header-left">
-          <div class="live-pill">
-            <div class="live-pill__dot"></div>
-            <span class="live-pill__text">LIVE</span>
-          </div>
-          <div class="camera-modal__info">
-            <p class="camera-modal__name">{{ camera.name }}</p>
-            <p class="camera-modal__location">{{ camera.location }}</p>
-          </div>
-        </div>
-        <button
-          type="button"
-          class="camera-modal__close"
-          (click)="closeCameraModal()"
-          aria-label="Đóng"
-        >
-          <svg viewBox="0 0 20 20" aria-hidden="true">
-            <path d="M5 5l10 10M15 5L5 15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"></path>
+        <div class="spots-grid__empty" *ngIf="filteredSpots.length === 0">
+          <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="10"></circle>
+            <line x1="12" y1="8" x2="12" y2="12"></line>
+            <line x1="12" y1="16" x2="12.01" y2="16"></line>
           </svg>
-        </button>
+          <p>Không tìm thấy vị trí đỗ nào</p>
+        </div>
       </div>
-      <div class="camera-modal__body" [style.backgroundImage]="'url(' + camera.imageUrl + ')'" role="img" [attr.aria-label]="camera.name"></div>
+    </section>
+  </div>
+</div>
+
+<!-- Add Parking Lot Modal -->
+<div class="modal" *ngIf="showAddLotModal">
+  <div class="modal__backdrop" (click)="closeAddLotModal()"></div>
+  <div class="modal__content">
+    <header>
+      <h3>Thêm bãi đỗ mới</h3>
+      <button type="button" (click)="closeAddLotModal()">×</button>
+    </header>
+    <div class="modal__body">
+      <label>
+        <span>Tên bãi đỗ <span class="required">*</span></span>
+        <input type="text" [(ngModel)]="newLot.name" placeholder="Ví dụ: Bãi đỗ trung tâm" />
+      </label>
+      <label>
+        <span>Vị trí <span class="required">*</span></span>
+        <input type="text" [(ngModel)]="newLot.location" placeholder="Ví dụ: Quận 1, TP.HCM" />
+      </label>
+      <label>
+        <span>Tổng số chỗ <span class="required">*</span></span>
+        <input type="number" [(ngModel)]="newLot.totalSlots" placeholder="Ví dụ: 100" />
+      </label>
+      <label>
+        <span>Giá mỗi giờ (VNĐ) <span class="required">*</span></span>
+        <input type="number" [(ngModel)]="newLot.pricePerHour" placeholder="Ví dụ: 15000" />
+      </label>
     </div>
+    <footer>
+      <button type="button" class="btn btn-ghost" (click)="closeAddLotModal()">Hủy</button>
+      <button type="button" class="btn btn-primary" [disabled]="submitting" (click)="handleCreateLot()">
+        {{ submitting ? 'Đang lưu...' : 'Thêm' }}
+      </button>
+    </footer>
+  </div>
+</div>
+
+<!-- Add Parking Slot Modal -->
+<div class="modal" *ngIf="showAddSlotModal">
+  <div class="modal__backdrop" (click)="closeAddSlotModal()"></div>
+  <div class="modal__content">
+    <header>
+      <h3>Thêm vị trí đỗ mới</h3>
+      <button type="button" (click)="closeAddSlotModal()">×</button>
+    </header>
+    <div class="modal__body">
+      <label>
+        <span>Bãi đỗ <span class="required">*</span></span>
+        <select [value]="newSlot.parkingLotId" (change)="newSlot.parkingLotId = $any($event.target).value === '' ? undefined : +$any($event.target).value">
+          <option value="">Chọn bãi đỗ</option>
+          <option *ngFor="let lot of parkingLots" [value]="lot.id">{{ lot.name }} - {{ lot.location }}</option>
+        </select>
+      </label>
+      <label>
+        <span>Mã vị trí <span class="required">*</span></span>
+        <input type="text" [(ngModel)]="newSlot.slotCode" placeholder="Ví dụ: A-01" />
+      </label>
+      <label>
+        <span>Trạng thái</span>
+        <select [(ngModel)]="newSlot.status">
+          <option value="available">Trống</option>
+          <option value="occupied">Đang đỗ</option>
+          <option value="out_of_service">Bảo trì</option>
+        </select>
+      </label>
+      <label>
+        <span>Coordinates (JSON - tùy chọn)</span>
+        <textarea [(ngModel)]="coordinatesText" rows="5" placeholder="[[[0,0],[100,0],[100,50],[0,50],[0,0]]]"></textarea>
+        <small>Định dạng JSON array 3 chiều. Ví dụ: [[[0,0],[100,0],[100,50],[0,50],[0,0]]]</small>
+      </label>
+    </div>
+    <footer>
+      <button type="button" class="btn btn-ghost" (click)="closeAddSlotModal()">Hủy</button>
+      <button type="button" class="btn btn-primary" [disabled]="submitting" (click)="handleCreateSlot()">
+        {{ submitting ? 'Đang lưu...' : 'Thêm' }}
+      </button>
+    </footer>
+  </div>
+</div>
+
+<!-- Slot Editor Modal -->
+<div class="modal modal--large" *ngIf="showSlotEditorModal">
+  <div class="modal__backdrop" (click)="closeSlotEditorModal()"></div>
+  <div class="modal__content" (click)="$event.stopPropagation()">
+    <header>
+      <h3>Tạo vị trí đỗ mới</h3>
+      <button type="button" (click)="closeSlotEditorModal()">×</button>
+    </header>
+    <div class="modal__body">
+      <div class="slot-editor">
+        <!-- Step 1: Upload Image -->
+        <div class="slot-editor__section">
+          <h4>Bước 1: Upload ảnh bãi đỗ</h4>
+          <label class="upload-area">
+            <input type="file" accept="image/*" (change)="onImageSelected($event)" style="display: none;" />
+            <div class="upload-area__content" *ngIf="!uploadedImageUrl">
+              <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                <polyline points="17 8 12 3 7 8"></polyline>
+                <line x1="12" y1="3" x2="12" y2="15"></line>
+              </svg>
+              <p>Click để chọn ảnh từ máy</p>
+            </div>
+            <img *ngIf="uploadedImageUrl" [src]="uploadedImageUrl" alt="Uploaded image" class="upload-preview" />
+          </label>
+        </div>
+
+        <!-- Step 2: Draw Rectangles -->
+        <div class="slot-editor__section" *ngIf="uploadedImageUrl">
+          <h4>Bước 2: Vẽ vị trí đỗ (Crop)</h4>
+          <div class="slot-editor__toolbar">
+            <div class="slot-editor__controls">
+              <button type="button" class="btn btn-primary" [class.active]="isDrawing" (click)="startDrawing()">
+                Bắt đầu vẽ
+              </button>
+              <button type="button" class="btn btn-secondary" [disabled]="!isDrawing" (click)="finishDrawing()">
+                Dừng vẽ
+              </button>
+              <button type="button" class="btn btn-secondary" [class.active]="isEditing" (click)="enableEdit()">
+                Chỉnh sửa
+              </button>
+              <button type="button" class="btn btn-ghost" [disabled]="slots.length === 0" (click)="clearAllSlots()">
+                Xóa tất cả
+              </button>
+            </div>
+            <div class="slot-editor__zoom">
+              <button type="button" class="btn btn-ghost" (click)="zoomOut()" title="Thu nhỏ">
+                <svg viewBox="0 0 20 20" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2">
+                  <circle cx="10" cy="10" r="6"></circle>
+                  <line x1="6" y1="10" x2="14" y2="10"></line>
+                </svg>
+              </button>
+              <span class="zoom-level">{{ (zoomLevel * 100).toFixed(0) }}%</span>
+              <button type="button" class="btn btn-ghost" (click)="zoomIn()" title="Phóng to">
+                <svg viewBox="0 0 20 20" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2">
+                  <circle cx="10" cy="10" r="6"></circle>
+                  <line x1="10" y1="6" x2="10" y2="14"></line>
+                  <line x1="6" y1="10" x2="14" y2="10"></line>
+                </svg>
+              </button>
+              <button type="button" class="btn btn-ghost" (click)="resetZoom()" title="Reset">
+                <svg viewBox="0 0 20 20" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M3 3v5h5M17 17v-5h-5M3 8a5 5 0 0 1 5-5h4M17 12a5 5 0 0 1-5 5h-4"></path>
+                </svg>
+              </button>
+            </div>
+          </div>
+          <div class="slot-editor__canvas-wrapper">
+            <div class="slot-editor__canvas" #canvasContainer></div>
+            <p class="slot-editor__hint">
+              <span *ngIf="isDrawing">Kéo chuột để vẽ vị trí đỗ (rectangle). Click "Dừng vẽ" khi xong.</span>
+              <span *ngIf="!isDrawing">Click "Bắt đầu vẽ" để vẽ vị trí đỗ mới. Scroll để zoom, kéo để pan.</span>
+            </p>
+          </div>
+        </div>
+
+        <!-- Step 3: Enter Slot Codes -->
+        <div class="slot-editor__section" *ngIf="uploadedImageUrl && slots.length > 0">
+          <h4>Bước 3: Nhập mã vị trí ({{ slots.length }} vị trí)</h4>
+          <div class="slots-list">
+            <div class="slot-item" *ngFor="let slot of slots; let i = index" [class.active]="currentSlotIndex === i">
+              <div class="slot-item__header">
+                <span class="slot-item__number">#{{ i + 1 }}</span>
+                <button type="button" class="btn btn-ghost btn-sm" (click)="deleteSlot(i)" title="Xóa">
+                  <svg viewBox="0 0 20 20" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M5 5l10 10M15 5L5 15"></path>
+                  </svg>
+                </button>
+              </div>
+              <label class="slot-item__input">
+                <span>Mã vị trí <span class="required">*</span></span>
+                <input type="text" [(ngModel)]="slot.slotCode" placeholder="Ví dụ: A-01" (click)="selectSlot(slot.id)" />
+              </label>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <footer>
+      <button type="button" class="btn btn-ghost" (click)="closeSlotEditorModal()">Hủy</button>
+      <button 
+        type="button" 
+        class="btn btn-primary" 
+        [disabled]="submitting || !uploadedImageFile || slots.length === 0" 
+        (click)="uploadImageAndCreateSlots()"
+      >
+        {{ submitting ? 'Đang lưu...' : `Lưu ${slots.length} vị trí đỗ` }}
+      </button>
+    </footer>
+  </div>
+</div>
+
+<!-- Camera Full View Modal -->
+<div class="camera-modal" *ngIf="activeCamera as camera" (click)="closeCameraModal()">
+  <div class="camera-modal__content" (click)="$event.stopPropagation()">
+    <div class="camera-modal__header">
+      <div class="camera-modal__header-left">
+        <div class="live-pill">
+          <div class="live-pill__dot"></div>
+          <span class="live-pill__text">LIVE</span>
+        </div>
+        <div class="camera-modal__info">
+          <p class="camera-modal__name">{{ camera.name }}</p>
+          <p class="camera-modal__location">{{ camera.location }}</p>
+        </div>
+      </div>
+      <button
+        type="button"
+        class="camera-modal__close"
+        (click)="closeCameraModal()"
+        aria-label="Đóng"
+      >
+        <svg viewBox="0 0 20 20" aria-hidden="true">
+          <path d="M5 5l10 10M15 5L5 15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"></path>
+        </svg>
+      </button>
+    </div>
+    <div class="camera-modal__body" [style.backgroundImage]="'url(' + camera.imageUrl + ')'" role="img" [attr.aria-label]="camera.name"></div>
   </div>
 </div>
