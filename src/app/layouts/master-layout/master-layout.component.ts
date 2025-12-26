@@ -30,7 +30,8 @@ export class MasterLayoutComponent {
     { label: 'Tổng quan', icon: 'overview', route: '/', exact: true },
     { label: 'Sơ đồ bãi xe', icon: 'map', route: '/parking-map' },
     { label: 'Quản lý xe', icon: 'car', route: '/vehicle-management' },
-    { label: 'Thống kê', icon: 'chart', route: '/statistics' }
+    { label: 'Thống kê', icon: 'chart', route: '/statistics' },
+    { label: 'Quản lý camera', icon: 'settings', route: '/camera-management' }
   ];
 
   readonly secondaryNavigation: NavigationItem[] = [{ label: 'Cài đặt', icon: 'settings' }];

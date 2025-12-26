@@ -4,7 +4,7 @@ import { FormsModule } from '@angular/forms';
 import { finalize, forkJoin, firstValueFrom } from 'rxjs';
 import Konva from 'konva';
 import { ApiClientService } from '../../core/services/api-client.service';
-import { ParkingSession, ParkingSlot, ParkingSlotStatus, ParkingLot, Vehicle } from '../../core/models/api.models';
+import { ParkingSession, ParkingSlot, ParkingSlotStatus, ParkingLot, Vehicle, ProcessVehicleResponse, Camera } from '../../core/models/api.models';
 
 type SpotStatus = ParkingSlotStatus;
 
@@ -20,10 +20,14 @@ interface CameraFeed {
   id: number;
   name: string;
   location: string;
-  imageUrl: string;
   status: 'active' | 'offline';
-  licensePlate?: string; // For camera 1 (detect-license-plate)
   loading?: boolean;
+  lastResult?: ProcessVehicleResponse;
+  cameraType?: string;
+  parkingLotId?: number | null;
+  streamUrl?: string;
+  stream?: MediaStream;
+  streamError?: string;
 }
 
 type StatKey = 'total' | 'available' | 'occupied';
@@ -44,24 +48,7 @@ export class ParkingMapComponent implements OnInit, AfterViewInit, OnDestroy {
   private imageLayer: Konva.Layer | null = null;
   private transformer: Konva.Transformer | null = null;
 
-  cameras: CameraFeed[] = [
-    {
-      id: 1,
-      name: 'Camera nhận diện biển số',
-      location: 'Lối vào chính',
-      imageUrl: '',
-      status: 'active',
-      loading: false
-    },
-    {
-      id: 2,
-      name: 'Camera nhận diện vị trí đỗ',
-      location: 'Khu vực bãi đỗ',
-      imageUrl: '',
-      status: 'active',
-      loading: false
-    }
-  ];
+  cameras: CameraFeed[] = [];
 
   readonly statDefinitions: Array<{ key: StatKey; label: string; indicator?: SpotStatus }> = [
     { key: 'total', label: 'Tổng số chỗ' },
@@ -161,6 +148,36 @@ export class ParkingMapComponent implements OnInit, AfterViewInit, OnDestroy {
 
   ngOnInit(): void {
     this.loadParkingLots();
+    this.loadCameras();
+  }
+
+  loadCameras(): void {
+    this.api.getCameras().subscribe({
+      next: (cameras) => {
+        // Map Camera từ API sang CameraFeed
+        this.cameras = cameras.map(camera => ({
+          id: camera.id,
+          name: camera.name,
+          location: camera.location || camera.name,
+          status: (camera.status === 'active' ? 'active' : 'offline') as 'active' | 'offline',
+          loading: false,
+          cameraType: camera.cameraType,
+          parkingLotId: camera.parkingLotId,
+          streamUrl: camera.streamUrl
+        }));
+        // Start streams for active webcam cameras
+        this.cameras.forEach(camera => {
+          if (camera.status === 'active' && camera.cameraType === 'webcam' && camera.streamUrl) {
+            this.startCameraStream(camera);
+          }
+        });
+      },
+      error: (err) => {
+        console.error('Error loading cameras:', err);
+        // Fallback to empty array if error
+        this.cameras = [];
+      }
+    });
   }
 
   ngAfterViewInit(): void {
@@ -169,11 +186,9 @@ export class ParkingMapComponent implements OnInit, AfterViewInit, OnDestroy {
 
   ngOnDestroy(): void {
     this.destroyCanvas();
-    // Clean up blob URLs
+    // Stop all camera streams
     this.cameras.forEach(camera => {
-      if (camera.imageUrl && camera.imageUrl.startsWith('blob:')) {
-        URL.revokeObjectURL(camera.imageUrl);
-      }
+      this.stopCameraStream(camera);
     });
   }
 
@@ -182,6 +197,77 @@ export class ParkingMapComponent implements OnInit, AfterViewInit, OnDestroy {
     this.selectedLot = lot;
     this.selectedZone = String(lot.id);
     this.loadSlotsForLot(lot.id);
+    // Load cameras for this parking lot
+    this.loadCamerasForLot(lot.id);
+  }
+
+  loadCamerasForLot(parkingLotId: number): void {
+    this.api.getCameras(parkingLotId).subscribe({
+      next: (cameras) => {
+        // Stop streams for cameras being replaced
+        const oldLotCameras = this.cameras.filter(c => c.parkingLotId === parkingLotId);
+        oldLotCameras.forEach(camera => {
+          this.stopCameraStream(camera);
+        });
+
+        // Update cameras for this parking lot
+        const lotCameras: CameraFeed[] = cameras.map(camera => ({
+          id: camera.id,
+          name: camera.name,
+          location: camera.location || camera.name,
+          status: (camera.status === 'active' ? 'active' : 'offline') as 'active' | 'offline',
+          loading: false,
+          cameraType: camera.cameraType,
+          parkingLotId: camera.parkingLotId,
+          streamUrl: camera.streamUrl
+        }));
+        
+        // Merge with existing cameras (keep cameras not in this lot, update/add cameras for this lot)
+        const otherCameras = this.cameras.filter(c => c.parkingLotId !== parkingLotId);
+        this.cameras = [...otherCameras, ...lotCameras];
+        
+        // Start streams for active webcam cameras
+        lotCameras.forEach(camera => {
+          if (camera.status === 'active' && camera.cameraType === 'webcam' && camera.streamUrl) {
+            this.startCameraStream(camera);
+          }
+        });
+      },
+      error: (err) => {
+        console.error('Error loading cameras for lot:', err);
+      }
+    });
+  }
+
+  async startCameraStream(camera: CameraFeed): Promise<void> {
+    if (!camera.streamUrl || camera.cameraType !== 'webcam') {
+      return;
+    }
+
+    try {
+      // Request permission first
+      await navigator.mediaDevices.getUserMedia({ video: true });
+      
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: {
+          deviceId: { exact: camera.streamUrl }
+        }
+      });
+      
+      camera.stream = stream;
+      camera.streamError = undefined;
+    } catch (err: any) {
+      console.error(`Error starting stream for camera ${camera.id}:`, err);
+      camera.streamError = err.message || 'Không thể truy cập camera';
+      camera.stream = undefined;
+    }
+  }
+
+  stopCameraStream(camera: CameraFeed): void {
+    if (camera.stream) {
+      camera.stream.getTracks().forEach(track => track.stop());
+      camera.stream = undefined;
+    }
   }
 
   backToList(): void {
@@ -221,8 +307,6 @@ export class ParkingMapComponent implements OnInit, AfterViewInit, OnDestroy {
       .subscribe({
         next: ({ slots, sessions, vehicles }) => {
           this.spots = this.hydrateSlots(slots, sessions, vehicles);
-          // Load camera feeds after loading slots
-          this.loadCameraFeeds(lotId);
         },
         error: (err) => {
           this.error = err?.error?.message || 'Không thể tải dữ liệu vị trí đỗ.';
@@ -230,59 +314,6 @@ export class ParkingMapComponent implements OnInit, AfterViewInit, OnDestroy {
       });
   }
 
-  private loadCameraFeeds(parkingLotId?: number): void {
-    // Camera 1: Detect license plate
-    const camera1 = this.cameras.find(c => c.id === 1);
-    if (camera1) {
-      camera1.loading = true;
-      this.api.detectLicensePlate(1).subscribe({
-        next: (response) => {
-          const licensePlate = response.headers.get('X-License-Plate');
-          const blob = response.body;
-          if (blob) {
-            const imageUrl = URL.createObjectURL(blob);
-            // Revoke old URL if exists
-            if (camera1.imageUrl && camera1.imageUrl.startsWith('blob:')) {
-              URL.revokeObjectURL(camera1.imageUrl);
-            }
-            camera1.imageUrl = imageUrl;
-            camera1.licensePlate = licensePlate || undefined;
-            camera1.loading = false;
-          }
-        },
-        error: (err) => {
-          console.error('Error loading camera 1:', err);
-          camera1.loading = false;
-          camera1.status = 'offline';
-        }
-      });
-    }
-
-    // Camera 2: Detect parking space
-    const camera2 = this.cameras.find(c => c.id === 2);
-    if (camera2) {
-      camera2.loading = true;
-      this.api.detectParkingSpace(2, parkingLotId).subscribe({
-        next: (response) => {
-          const blob = response.body;
-          if (blob) {
-            const imageUrl = URL.createObjectURL(blob);
-            // Revoke old URL if exists
-            if (camera2.imageUrl && camera2.imageUrl.startsWith('blob:')) {
-              URL.revokeObjectURL(camera2.imageUrl);
-            }
-            camera2.imageUrl = imageUrl;
-            camera2.loading = false;
-          }
-        },
-        error: (err) => {
-          console.error('Error loading camera 2:', err);
-          camera2.loading = false;
-          camera2.status = 'offline';
-        }
-      });
-    }
-  }
 
   handleSearch(value: string): void {
     this.searchQuery = value;
@@ -294,122 +325,61 @@ export class ParkingMapComponent implements OnInit, AfterViewInit, OnDestroy {
 
   selectCamera(id: number): void {
     this.selectedCameraId = id;
-    // Gọi API detect cho cả 2 camera khi mở modal
-    this.detectAllCameras();
+    const camera = this.cameras.find(c => c.id === id);
+    if (camera && !camera.stream && camera.cameraType === 'webcam' && camera.streamUrl && camera.status === 'active') {
+      // Start stream if not already started
+      this.startCameraStream(camera);
+    }
   }
 
   closeCameraModal(): void {
     this.selectedCameraId = null;
   }
 
-  detectAllCameras(): void {
-    // Detect camera 1: License plate
-    const camera1 = this.cameras.find(c => c.id === 1);
-    if (camera1) {
-      camera1.loading = true;
-      camera1.status = 'active';
-      this.api.detectLicensePlate(1).subscribe({
-        next: (response) => {
-          const licensePlate = response.headers.get('X-License-Plate');
-          const blob = response.body;
-          if (blob) {
-            const imageUrl = URL.createObjectURL(blob);
-            // Revoke old URL if exists
-            if (camera1.imageUrl && camera1.imageUrl.startsWith('blob:')) {
-              URL.revokeObjectURL(camera1.imageUrl);
-            }
-            camera1.imageUrl = imageUrl;
-            camera1.licensePlate = licensePlate || undefined;
-            camera1.loading = false;
-          }
-        },
-        error: (err) => {
-          console.error('Error detecting camera 1:', err);
-          camera1.loading = false;
-          camera1.status = 'offline';
-        }
-      });
-    }
-
-    // Detect camera 2: Parking space
-    const camera2 = this.cameras.find(c => c.id === 2);
-    if (camera2) {
-      camera2.loading = true;
-      camera2.status = 'active';
-      this.api.detectParkingSpace(2, this.selectedLotId || undefined).subscribe({
-        next: (response) => {
-          const blob = response.body;
-          if (blob) {
-            const imageUrl = URL.createObjectURL(blob);
-            // Revoke old URL if exists
-            if (camera2.imageUrl && camera2.imageUrl.startsWith('blob:')) {
-              URL.revokeObjectURL(camera2.imageUrl);
-            }
-            camera2.imageUrl = imageUrl;
-            camera2.loading = false;
-          }
-        },
-        error: (err) => {
-          console.error('Error detecting camera 2:', err);
-          camera2.loading = false;
-          camera2.status = 'offline';
-        }
-      });
-    }
-  }
-
-  refreshCamera(cameraId: number): void {
+  processVehicle(cameraId: number): void {
     const camera = this.cameras.find(c => c.id === cameraId);
     if (!camera) return;
 
     camera.loading = true;
     camera.status = 'active';
 
-    if (cameraId === 1) {
-      // Camera 1: Detect license plate
-      this.api.detectLicensePlate(1).subscribe({
-        next: (response) => {
-          const licensePlate = response.headers.get('X-License-Plate');
-          const blob = response.body;
-          if (blob) {
-            const imageUrl = URL.createObjectURL(blob);
-            // Revoke old URL if exists
-            if (camera.imageUrl && camera.imageUrl.startsWith('blob:')) {
-              URL.revokeObjectURL(camera.imageUrl);
-            }
-            camera.imageUrl = imageUrl;
-            camera.licensePlate = licensePlate || undefined;
-            camera.loading = false;
-          }
-        },
-        error: (err) => {
-          console.error('Error refreshing camera 1:', err);
-          camera.loading = false;
+    this.api.processVehicleFromCamera(cameraId, {
+      parkingLotId: this.selectedLotId || undefined
+    }).subscribe({
+      next: (response) => {
+        camera.loading = false;
+        camera.lastResult = response;
+        
+        // Reload slots after processing
+        if (this.selectedLotId) {
+          this.loadSlotsForLot(this.selectedLotId);
+        }
+
+        // Show success message
+        const isEntry = response.message.toLowerCase().includes('entry') || 
+                       response.message.toLowerCase().includes('vào');
+        const isExit = response.message.toLowerCase().includes('exit') || 
+                      response.message.toLowerCase().includes('ra');
+        
+        if (isEntry) {
+          console.log('✅ Xe đã VÀO:', response);
+        } else if (isExit) {
+          console.log('✅ Xe đã RA:', response);
+        }
+      },
+      error: (err) => {
+        console.error('Error processing vehicle:', err);
+        camera.loading = false;
+        // Don't change status to offline on error, keep it as active if stream is working
+        if (!camera.stream && camera.cameraType === 'webcam') {
           camera.status = 'offline';
         }
-      });
-    } else if (cameraId === 2) {
-      // Camera 2: Detect parking space
-      this.api.detectParkingSpace(2, this.selectedLotId || undefined).subscribe({
-        next: (response) => {
-          const blob = response.body;
-          if (blob) {
-            const imageUrl = URL.createObjectURL(blob);
-            // Revoke old URL if exists
-            if (camera.imageUrl && camera.imageUrl.startsWith('blob:')) {
-              URL.revokeObjectURL(camera.imageUrl);
-            }
-            camera.imageUrl = imageUrl;
-            camera.loading = false;
-          }
-        },
-        error: (err) => {
-          console.error('Error refreshing camera 2:', err);
-          camera.loading = false;
-          camera.status = 'offline';
-        }
-      });
-    }
+        
+        // Show error message
+        const errorMessage = err?.error?.error || err?.error?.message || 'Có lỗi xảy ra khi xử lý xe';
+        console.error('Camera error:', errorMessage);
+      }
+    });
   }
 
   getStatusLabel(status: SpotStatus): string {

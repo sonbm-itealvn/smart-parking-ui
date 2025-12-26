@@ -3,6 +3,7 @@ import { Injectable, inject } from '@angular/core';
 import { environment } from '../../../environments/environment';
 import {
   AuthResponse,
+  Camera,
   DailyRevenueResponse,
   ExitSessionResponse,
   LicensePlateLog,
@@ -12,6 +13,7 @@ import {
   ParkingSession,
   ParkingSlot,
   Payment,
+  ProcessVehicleResponse,
   Role,
   User,
   Vehicle
@@ -164,19 +166,40 @@ export class ApiClientService {
   }
 
   // Camera detection endpoints
-  detectLicensePlate(cameraId: number) {
-    return this.http.post(`${this.baseUrl}/api/cameras/${cameraId}/detect-license-plate`, {}, {
-      responseType: 'blob',
-      observe: 'response'
-    });
+  processVehicleFromCamera(cameraId: number, options?: { parkingLotId?: number; slotId?: number }) {
+    const body: any = {};
+    if (options?.parkingLotId) body.parkingLotId = options.parkingLotId;
+    if (options?.slotId) body.slotId = options.slotId;
+    
+    return this.http.post<ProcessVehicleResponse>(
+      `${this.baseUrl}/api/cameras/${cameraId}/process-vehicle`,
+      Object.keys(body).length > 0 ? body : {}
+    );
   }
 
-  detectParkingSpace(cameraId: number, parkingLotId?: number) {
-    const body = parkingLotId ? { parkingLotId } : {};
-    return this.http.post(`${this.baseUrl}/api/cameras/${cameraId}/detect-parking-space`, body, {
-      responseType: 'blob',
-      observe: 'response'
-    });
+  // Camera Management
+  getCameras(parkingLotId?: number) {
+    let params = new HttpParams();
+    if (parkingLotId) {
+      params = params.set('parkingLotId', parkingLotId.toString());
+    }
+    return this.http.get<Camera[]>(`${this.baseUrl}/api/cameras`, { params });
+  }
+
+  getCamera(id: number) {
+    return this.http.get<Camera>(`${this.baseUrl}/api/cameras/${id}`);
+  }
+
+  createCamera(payload: Partial<Camera>) {
+    return this.http.post<Camera>(`${this.baseUrl}/api/cameras`, payload);
+  }
+
+  updateCamera(id: number, payload: Partial<Camera>) {
+    return this.http.put<Camera>(`${this.baseUrl}/api/cameras/${id}`, payload);
+  }
+
+  deleteCamera(id: number) {
+    return this.http.delete(`${this.baseUrl}/api/cameras/${id}`);
   }
 }
 

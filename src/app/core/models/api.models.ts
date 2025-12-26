@@ -151,3 +151,56 @@ export interface DailyRevenueResponse {
   revenueByHour?: Array<{ hour: number; revenue: number; vehicles: number }>;
 }
 
+// Camera
+export type CameraType = 'rtsp' | 'http' | 'webcam';
+export type CameraStatus = 'active' | 'inactive' | 'maintenance';
+
+export interface Camera {
+  id: number;
+  name: string;
+  streamUrl: string;
+  cameraType: CameraType;
+  status: CameraStatus;
+  parkingLotId: number | null;
+  parkingLot?: {
+    id: number;
+    name: string;
+  } | null;
+  description: string | null;
+  location: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+// Process Vehicle Response
+export interface ProcessVehicleResponse {
+  message: string;
+  licensePlate?: string;
+  isRegistered?: boolean;
+  vehicle?: {
+    id: number;
+    licensePlate: string;
+    userId?: number;
+  };
+  parkingSession: {
+    id: number;
+    entryTime: string;
+    exitTime?: string;
+    status: string;
+    fee?: number;
+  };
+  slot?: {
+    id: number;
+    slotCode: string;
+  };
+  feeDetails?: {
+    entryTime: string;
+    exitTime: string;
+    durationHours: number;
+    totalFee: number;
+    feeBreakdown: Array<{ hour: number; fee: number }>;
+  };
+  notificationSent?: boolean;
+  note?: string;
+}
+

@@ -94,51 +94,64 @@
         <div
           class="camera-card"
           *ngFor="let camera of cameras; trackBy: trackByCamera"
-          (click)="selectCamera(camera.id)"
           [class.camera-card--loading]="camera.loading"
           [class.camera-card--offline]="camera.status === 'offline'"
         >
-          <div class="camera-thumb" [style.backgroundImage]="camera.imageUrl ? 'url(' + camera.imageUrl + ')' : 'none'" [class.camera-thumb--empty]="!camera.imageUrl">
-            <!-- Live indicator -->
-            <div class="live-pill" *ngIf="!camera.loading && camera.status === 'active'">
-              <div class="live-pill__dot"></div>
-              <span class="live-pill__text">LIVE</span>
-            </div>
-            <!-- Loading state -->
-            <div class="camera-loading" *ngIf="camera.loading">
-              <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2">
-                <circle cx="12" cy="12" r="10" stroke-opacity="0.25"></circle>
-                <path d="M12 2a10 10 0 0 1 10 10" stroke-linecap="round"></path>
-              </svg>
-              <span>Đang tải...</span>
-            </div>
-            <!-- Offline state -->
-            <div class="camera-offline" *ngIf="!camera.loading && camera.status === 'offline'">
-              <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2">
-                <path d="M18.364 18.364A9 9 0 0 0 5.636 5.636m12.728 12.728A9 9 0 0 1 5.636 5.636m12.728 12.728L5.636 5.636"></path>
-              </svg>
-              <span>Offline</span>
-            </div>
-            <!-- Expand button -->
-            <div class="camera-expand-btn" *ngIf="!camera.loading && camera.imageUrl">
-              <svg viewBox="0 0 20 20" aria-hidden="true">
-                <path d="M7 3H3v4M13 17h4v-4M3 3l6 6M11 11l6 6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path>
-              </svg>
-            </div>
-            <!-- Time overlay -->
-            <div class="camera-time" *ngIf="!camera.loading && camera.imageUrl">
-              {{ (now | date: 'HH:mm') }}
+          <!-- Camera Preview -->
+          <div class="camera-preview" *ngIf="camera.stream && camera.cameraType === 'webcam'">
+            <video
+              [srcObject]="camera.stream"
+              autoplay
+              playsinline
+              muted
+              class="camera-video"
+            ></video>
+            <div class="camera-preview-overlay">
+              <div class="live-pill" *ngIf="camera.status === 'active'">
+                <div class="live-pill__dot"></div>
+                <span class="live-pill__text">LIVE</span>
+              </div>
             </div>
           </div>
+          
+          <!-- Camera Icon (fallback when no stream) -->
+          <div class="camera-icon" *ngIf="!camera.stream || camera.cameraType !== 'webcam'">
+            <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path>
+              <circle cx="12" cy="13" r="4"></circle>
+            </svg>
+            <div class="camera-error" *ngIf="camera.streamError">
+              <svg viewBox="0 0 20 20" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2">
+                <circle cx="10" cy="10" r="8"></circle>
+                <path d="M10 6v4M10 14h.01" stroke-linecap="round"></path>
+              </svg>
+            </div>
+          </div>
+          
           <div class="camera-body">
             <p class="camera-title">{{ camera.name }}</p>
             <p class="camera-location">{{ camera.location }}</p>
-            <p class="camera-license-plate" *ngIf="camera.licensePlate">
+            <button
+              type="button"
+              class="camera-process-btn"
+              (click)="selectCamera(camera.id); $event.stopPropagation()"
+              [disabled]="camera.loading || camera.status === 'offline'"
+            >
               <svg viewBox="0 0 20 20" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2">
-                <rect x="3" y="4" width="14" height="12" rx="2"></rect>
+                <path d="M13 10V3L4 14h7v7l9-11h-7z"></path>
               </svg>
-              {{ camera.licensePlate }}
-            </p>
+              <span>Xử lý xe</span>
+            </button>
+            <!-- Last result preview -->
+            <div class="camera-last-result" *ngIf="camera.lastResult && !camera.loading">
+              <div class="result-badge" [class.result-badge--entry]="camera.lastResult.message.toLowerCase().includes('entry') || camera.lastResult.message.toLowerCase().includes('vào')" [class.result-badge--exit]="camera.lastResult.message.toLowerCase().includes('exit') || camera.lastResult.message.toLowerCase().includes('ra')">
+                <span *ngIf="camera.lastResult.message.toLowerCase().includes('entry') || camera.lastResult.message.toLowerCase().includes('vào')">🚗 VÀO</span>
+                <span *ngIf="camera.lastResult.message.toLowerCase().includes('exit') || camera.lastResult.message.toLowerCase().includes('ra')">🚪 RA</span>
+              </div>
+              <p class="result-license" *ngIf="camera.lastResult.licensePlate || camera.lastResult.vehicle?.licensePlate">
+                {{ camera.lastResult.licensePlate || camera.lastResult.vehicle?.licensePlate }}
+              </p>
+            </div>
           </div>
         </div>
       </div>
@@ -421,96 +434,157 @@
   </div>
 </div>
 
-<!-- Camera Full View Modal -->
+<!-- Camera Process Vehicle Modal -->
 <div class="camera-modal" *ngIf="activeCamera as camera" (click)="closeCameraModal()">
   <div class="camera-modal__content" (click)="$event.stopPropagation()">
     <div class="camera-modal__header">
       <div class="camera-modal__header-left">
-        <div class="live-pill" *ngIf="!camera.loading && camera.status === 'active'">
-          <div class="live-pill__dot"></div>
-          <span class="live-pill__text">LIVE</span>
+        <div class="camera-modal__icon">
+          <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path>
+            <circle cx="12" cy="13" r="4"></circle>
+          </svg>
         </div>
         <div class="camera-modal__info">
           <p class="camera-modal__name">{{ camera.name }}</p>
           <p class="camera-modal__location">{{ camera.location }}</p>
-          <div class="camera-modal__license-plate" *ngIf="camera.licensePlate">
-            <svg viewBox="0 0 20 20" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2">
-              <rect x="3" y="4" width="14" height="12" rx="2"></rect>
-            </svg>
-            <div>
-              <span class="license-label">Biển số phát hiện:</span>
-              <span class="license-value">{{ camera.licensePlate }}</span>
-            </div>
-          </div>
         </div>
       </div>
-      <div class="camera-modal__actions">
-        <button
-          type="button"
-          class="camera-modal__refresh"
-          (click)="refreshCamera(camera.id); $event.stopPropagation()"
-          [disabled]="camera.loading"
-          aria-label="Làm mới"
-          title="Làm mới camera"
-        >
-          <svg viewBox="0 0 20 20" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M3 10a7 7 0 0 1 14 0M3 10l3-3m-3 3l3 3m11-3l-3-3m3 3l-3 3" stroke-linecap="round" stroke-linejoin="round"></path>
-          </svg>
-          <span>Làm mới</span>
-        </button>
-        <button
-          type="button"
-          class="camera-modal__close"
-          (click)="closeCameraModal()"
-          aria-label="Đóng"
-        >
-          <svg viewBox="0 0 20 20" aria-hidden="true">
-            <path d="M5 5l10 10M15 5L5 15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"></path>
-          </svg>
-        </button>
-      </div>
+      <button
+        type="button"
+        class="camera-modal__close"
+        (click)="closeCameraModal()"
+        aria-label="Đóng"
+      >
+        <svg viewBox="0 0 20 20" aria-hidden="true">
+          <path d="M5 5l10 10M15 5L5 15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"></path>
+        </svg>
+      </button>
     </div>
-    <div class="camera-modal__body" [style.backgroundImage]="camera.imageUrl ? 'url(' + camera.imageUrl + ')' : 'none'" role="img" [attr.aria-label]="camera.name">
-      <div class="camera-modal__loading" *ngIf="camera.loading">
+    <div class="camera-modal__body">
+      <!-- Camera Stream Preview -->
+      <div class="camera-modal__stream" *ngIf="camera.stream && camera.cameraType === 'webcam'">
+        <video
+          [srcObject]="camera.stream"
+          autoplay
+          playsinline
+          muted
+          class="camera-modal__video"
+        ></video>
+        <div class="camera-modal__stream-overlay">
+          <div class="live-pill">
+            <div class="live-pill__dot"></div>
+            <span class="live-pill__text">LIVE</span>
+          </div>
+        </div>
+        <!-- Loading overlay when processing -->
+        <div class="camera-modal__processing-overlay" *ngIf="camera.loading">
+          <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="10" stroke-opacity="0.25"></circle>
+            <path d="M12 2a10 10 0 0 1 10 10" stroke-linecap="round"></path>
+          </svg>
+          <span>Đang xử lý...</span>
+          <p class="loading-subtitle">Đang nhận diện biển số xe...</p>
+        </div>
+      </div>
+
+      <!-- Loading state (when no stream) -->
+      <div class="camera-modal__loading" *ngIf="camera.loading && (!camera.stream || camera.cameraType !== 'webcam')">
         <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2">
           <circle cx="12" cy="12" r="10" stroke-opacity="0.25"></circle>
           <path d="M12 2a10 10 0 0 1 10 10" stroke-linecap="round"></path>
         </svg>
-        <span>Đang tải hình ảnh...</span>
+        <span>Đang xử lý...</span>
+        <p class="loading-subtitle">Đang nhận diện biển số xe...</p>
       </div>
-      <div class="camera-modal__offline" *ngIf="!camera.loading && camera.status === 'offline'">
+
+      <!-- Offline state (only if no stream and status is offline) -->
+      <div class="camera-modal__offline" *ngIf="!camera.loading && camera.status === 'offline' && (!camera.stream || camera.cameraType !== 'webcam')">
         <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2">
           <path d="M18.364 18.364A9 9 0 0 0 5.636 5.636m12.728 12.728A9 9 0 0 1 5.636 5.636m12.728 12.728L5.636 5.636"></path>
         </svg>
         <span>Camera offline</span>
-        <button type="button" class="retry-button" (click)="refreshCamera(camera.id); $event.stopPropagation()">
-          Thử lại
-        </button>
+        <p class="offline-message">Không thể kết nối đến camera. Vui lòng thử lại sau.</p>
       </div>
-      <div class="camera-modal__overlay" *ngIf="!camera.loading && camera.status === 'active' && camera.imageUrl">
-        <div class="camera-overlay-info">
-          <div class="overlay-timestamp">
-            <svg viewBox="0 0 20 20" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2">
-              <circle cx="10" cy="10" r="8"></circle>
-              <path d="M10 6v4l3 2"></path>
-            </svg>
-            {{ now | date: 'HH:mm:ss' }}
+
+      <!-- Process button -->
+      <div class="camera-modal__process" *ngIf="!camera.loading && (camera.status === 'active' || camera.stream)">
+        <button
+          type="button"
+          class="process-vehicle-btn"
+          (click)="processVehicle(camera.id); $event.stopPropagation()"
+          [disabled]="camera.loading"
+        >
+          <svg viewBox="0 0 20 20" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M13 10V3L4 14h7v7l9-11h-7z"></path>
+          </svg>
+          <span>Xử lý xe từ camera</span>
+        </button>
+        <p class="process-hint">Nhấn để camera tự động nhận diện biển số và xử lý VÀO/RA</p>
+      </div>
+
+      <!-- Result display -->
+      <div class="camera-modal__result" *ngIf="camera.lastResult && !camera.loading">
+        <div class="result-card" [class.result-card--entry]="camera.lastResult.message.toLowerCase().includes('entry') || camera.lastResult.message.toLowerCase().includes('vào')" [class.result-card--exit]="camera.lastResult.message.toLowerCase().includes('exit') || camera.lastResult.message.toLowerCase().includes('ra')">
+          <div class="result-header">
+            <div class="result-icon">
+              <span *ngIf="camera.lastResult.message.toLowerCase().includes('entry') || camera.lastResult.message.toLowerCase().includes('vào')">🚗</span>
+              <span *ngIf="camera.lastResult.message.toLowerCase().includes('exit') || camera.lastResult.message.toLowerCase().includes('ra')">🚪</span>
+            </div>
+            <div class="result-title">
+              <h3 *ngIf="camera.lastResult.message.toLowerCase().includes('entry') || camera.lastResult.message.toLowerCase().includes('vào')">XE ĐÃ VÀO</h3>
+              <h3 *ngIf="camera.lastResult.message.toLowerCase().includes('exit') || camera.lastResult.message.toLowerCase().includes('ra')">XE ĐÃ RA</h3>
+              <p class="result-message">{{ camera.lastResult.message }}</p>
+            </div>
+          </div>
+
+          <div class="result-details">
+            <!-- License plate -->
+            <div class="result-item" *ngIf="camera.lastResult.licensePlate || camera.lastResult.vehicle?.licensePlate">
+              <span class="result-label">Biển số:</span>
+              <span class="result-value result-value--highlight">
+                {{ camera.lastResult.licensePlate || camera.lastResult.vehicle?.licensePlate }}
+              </span>
+            </div>
+
+            <!-- Slot -->
+            <div class="result-item" *ngIf="camera.lastResult.slot">
+              <span class="result-label">Vị trí đỗ:</span>
+              <span class="result-value">{{ camera.lastResult.slot.slotCode }}</span>
+            </div>
+
+            <!-- Entry time -->
+            <div class="result-item" *ngIf="camera.lastResult.parkingSession.entryTime">
+              <span class="result-label">Giờ vào:</span>
+              <span class="result-value">{{ camera.lastResult.parkingSession.entryTime | date: 'HH:mm:ss dd/MM/yyyy' }}</span>
+            </div>
+
+            <!-- Exit time -->
+            <div class="result-item" *ngIf="camera.lastResult.parkingSession.exitTime">
+              <span class="result-label">Giờ ra:</span>
+              <span class="result-value">{{ camera.lastResult.parkingSession.exitTime | date: 'HH:mm:ss dd/MM/yyyy' }}</span>
+            </div>
+
+            <!-- Fee details (for exit) -->
+            <div class="result-fee" *ngIf="camera.lastResult.feeDetails">
+              <div class="fee-item">
+                <span class="fee-label">Thời gian đỗ:</span>
+                <span class="fee-value">{{ camera.lastResult.feeDetails.durationHours }} giờ</span>
+              </div>
+              <div class="fee-item fee-item--total">
+                <span class="fee-label">Tổng phí:</span>
+                <span class="fee-value fee-value--total">
+                  {{ camera.lastResult.feeDetails.totalFee | number }} VNĐ
+                </span>
+              </div>
+            </div>
+
+            <!-- Registered status -->
+            <div class="result-item" *ngIf="camera.lastResult.isRegistered === false">
+              <span class="result-badge result-badge--guest">Xe vãng lai</span>
+            </div>
           </div>
         </div>
-      </div>
-    </div>
-    <div class="camera-modal__footer" *ngIf="!camera.loading && camera.status === 'active'">
-      <div class="camera-footer-info">
-        <span class="footer-label">Camera ID:</span>
-        <span class="footer-value">{{ camera.id }}</span>
-      </div>
-      <div class="camera-footer-info" *ngIf="camera.licensePlate">
-        <span class="footer-label">Biển số:</span>
-        <span class="footer-value footer-value--highlight">{{ camera.licensePlate }}</span>
-      </div>
-      <div class="camera-footer-info">
-        <span class="footer-label">Trạng thái:</span>
-        <span class="footer-value footer-value--success">Hoạt động</span>
       </div>
     </div>
   </div>
