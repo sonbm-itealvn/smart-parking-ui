@@ -294,10 +294,122 @@ export class ParkingMapComponent implements OnInit, AfterViewInit, OnDestroy {
 
   selectCamera(id: number): void {
     this.selectedCameraId = id;
+    // Gọi API detect cho cả 2 camera khi mở modal
+    this.detectAllCameras();
   }
 
   closeCameraModal(): void {
     this.selectedCameraId = null;
+  }
+
+  detectAllCameras(): void {
+    // Detect camera 1: License plate
+    const camera1 = this.cameras.find(c => c.id === 1);
+    if (camera1) {
+      camera1.loading = true;
+      camera1.status = 'active';
+      this.api.detectLicensePlate(1).subscribe({
+        next: (response) => {
+          const licensePlate = response.headers.get('X-License-Plate');
+          const blob = response.body;
+          if (blob) {
+            const imageUrl = URL.createObjectURL(blob);
+            // Revoke old URL if exists
+            if (camera1.imageUrl && camera1.imageUrl.startsWith('blob:')) {
+              URL.revokeObjectURL(camera1.imageUrl);
+            }
+            camera1.imageUrl = imageUrl;
+            camera1.licensePlate = licensePlate || undefined;
+            camera1.loading = false;
+          }
+        },
+        error: (err) => {
+          console.error('Error detecting camera 1:', err);
+          camera1.loading = false;
+          camera1.status = 'offline';
+        }
+      });
+    }
+
+    // Detect camera 2: Parking space
+    const camera2 = this.cameras.find(c => c.id === 2);
+    if (camera2) {
+      camera2.loading = true;
+      camera2.status = 'active';
+      this.api.detectParkingSpace(2, this.selectedLotId || undefined).subscribe({
+        next: (response) => {
+          const blob = response.body;
+          if (blob) {
+            const imageUrl = URL.createObjectURL(blob);
+            // Revoke old URL if exists
+            if (camera2.imageUrl && camera2.imageUrl.startsWith('blob:')) {
+              URL.revokeObjectURL(camera2.imageUrl);
+            }
+            camera2.imageUrl = imageUrl;
+            camera2.loading = false;
+          }
+        },
+        error: (err) => {
+          console.error('Error detecting camera 2:', err);
+          camera2.loading = false;
+          camera2.status = 'offline';
+        }
+      });
+    }
+  }
+
+  refreshCamera(cameraId: number): void {
+    const camera = this.cameras.find(c => c.id === cameraId);
+    if (!camera) return;
+
+    camera.loading = true;
+    camera.status = 'active';
+
+    if (cameraId === 1) {
+      // Camera 1: Detect license plate
+      this.api.detectLicensePlate(1).subscribe({
+        next: (response) => {
+          const licensePlate = response.headers.get('X-License-Plate');
+          const blob = response.body;
+          if (blob) {
+            const imageUrl = URL.createObjectURL(blob);
+            // Revoke old URL if exists
+            if (camera.imageUrl && camera.imageUrl.startsWith('blob:')) {
+              URL.revokeObjectURL(camera.imageUrl);
+            }
+            camera.imageUrl = imageUrl;
+            camera.licensePlate = licensePlate || undefined;
+            camera.loading = false;
+          }
+        },
+        error: (err) => {
+          console.error('Error refreshing camera 1:', err);
+          camera.loading = false;
+          camera.status = 'offline';
+        }
+      });
+    } else if (cameraId === 2) {
+      // Camera 2: Detect parking space
+      this.api.detectParkingSpace(2, this.selectedLotId || undefined).subscribe({
+        next: (response) => {
+          const blob = response.body;
+          if (blob) {
+            const imageUrl = URL.createObjectURL(blob);
+            // Revoke old URL if exists
+            if (camera.imageUrl && camera.imageUrl.startsWith('blob:')) {
+              URL.revokeObjectURL(camera.imageUrl);
+            }
+            camera.imageUrl = imageUrl;
+            camera.loading = false;
+          }
+        },
+        error: (err) => {
+          console.error('Error refreshing camera 2:', err);
+          camera.loading = false;
+          camera.status = 'offline';
+        }
+      });
+    }
   }
 
   getStatusLabel(status: SpotStatus): string {
