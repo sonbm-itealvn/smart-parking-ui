@@ -4,6 +4,23 @@
     <p class="dashboard__subtitle">Tổng quan hoạt động bãi đỗ xe</p>
   </div>
 
+  <!-- Filters -->
+  <div class="filters-panel" *ngIf="!loading">
+    <div class="filters-panel__content">
+      <label class="filter-item">
+        <span class="filter-label">Ngày</span>
+        <input type="date" [value]="selectedDate" (change)="selectedDate = $any($event.target).value; onDateChange()" class="filter-input" />
+      </label>
+      <label class="filter-item">
+        <span class="filter-label">Bãi đỗ</span>
+        <select [value]="selectedParkingLotId ?? ''" (change)="selectedParkingLotId = $any($event.target).value === '' ? null : +$any($event.target).value; onParkingLotChange()" class="filter-input">
+          <option value="">Tất cả bãi đỗ</option>
+          <option *ngFor="let lot of parkingLots()" [value]="lot.id">{{ lot.name }}</option>
+        </select>
+      </label>
+    </div>
+  </div>
+
   <div class="callout" *ngIf="error">
     <p>{{ error }}</p>
   </div>
@@ -51,13 +68,85 @@
 
   <!-- Charts -->
   <div class="charts-grid" *ngIf="!loading">
-    <!-- Revenue Chart -->
+    <!-- Daily Revenue by Hour Chart -->
+    <div class="chart-panel" *ngIf="revenueByHour().length > 0">
+      <div class="chart-panel__header">
+        <div>
+          <h3 class="chart-panel__title">Doanh thu theo giờ</h3>
+          <p class="chart-panel__subtitle" *ngIf="dailyRevenue()">
+            Tổng: {{ dailyRevenue()!.totalRevenue.toLocaleString() }} VNĐ • 
+            {{ dailyRevenue()!.totalVehicles }} lượt xe
+          </p>
+        </div>
+      </div>
+      <div class="bar-chart-container">
+        <div class="bar-chart-wrapper">
+          <div class="bar-chart-y-axis">
+            <span *ngFor="let tick of getYAxisTicks(revenueMax())" class="y-axis-tick">
+              {{ formatYAxisValue(tick) }}
+            </span>
+          </div>
+          <div class="bar-chart-content">
+            <div class="bar-chart-grid"></div>
+            <div class="bar-chart-bars">
+              <div class="bar-item" *ngFor="let item of revenueByHour(); let i = index">
+                <div class="bar-wrapper">
+                  <div 
+                    class="bar-fill" 
+                    [style.height.%]="revenueMax() ? (item.revenue / revenueMax()) * 100 : 0"
+                    [attr.data-value]="item.revenue"
+                    [attr.data-hour]="item.hour"
+                  >
+                    <div class="bar-value-label">
+                      {{ formatRevenue(item.revenue) }}
+                    </div>
+                    <div class="bar-glow"></div>
+                  </div>
+                </div>
+                <div class="bar-label">{{ item.hour }}:00</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Revenue Chart by Week -->
     <div class="chart-panel">
-      <h3 class="chart-panel__title">Doanh thu tuần (nghìn VNĐ)</h3>
-      <div class="chart chart--bar">
-        <div class="bar" *ngFor="let item of revenueData(); trackBy: trackByRevenue">
-          <div class="bar__fill" [style.height.%]="revenueMax() ? (item.value / revenueMax()) * 100 : 0"></div>
-          <span class="bar__label">{{ item.name }}</span>
+      <div class="chart-panel__header">
+        <div>
+          <h3 class="chart-panel__title">Doanh thu 7 ngày qua</h3>
+          <p class="chart-panel__subtitle">Tổng quan tuần này</p>
+        </div>
+      </div>
+      <div class="bar-chart-container">
+        <div class="bar-chart-wrapper">
+          <div class="bar-chart-y-axis">
+            <span *ngFor="let tick of getYAxisTicks(revenueWeekMax() * 1000)" class="y-axis-tick">
+              {{ formatYAxisValue(tick) }}
+            </span>
+          </div>
+          <div class="bar-chart-content">
+            <div class="bar-chart-grid"></div>
+            <div class="bar-chart-bars">
+              <div class="bar-item" *ngFor="let item of revenueData(); trackBy: trackByRevenue">
+                <div class="bar-wrapper">
+                  <div 
+                    class="bar-fill bar-fill--week" 
+                    [style.height.%]="revenueWeekMax() ? ((item.value * 1000) / revenueWeekMax()) * 100 : 0"
+                    [attr.data-value]="item.value * 1000"
+                    [attr.data-day]="item.name"
+                  >
+                    <div class="bar-value-label">
+                      {{ item.value }}K
+                    </div>
+                    <div class="bar-glow"></div>
+                  </div>
+                </div>
+                <div class="bar-label">{{ item.name }}</div>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
     </div>

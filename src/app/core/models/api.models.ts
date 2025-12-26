@@ -54,7 +54,8 @@ export type ParkingSessionStatus = 'active' | 'completed' | 'cancelled';
 
 export interface ParkingSession {
   id: number;
-  vehicleId: number;
+  vehicleId: number | null;
+  licensePlate?: string; // For guest vehicles (when vehicleId is null)
   parkingSlotId: number;
   entryTime: string;
   exitTime?: string | null;
@@ -100,5 +101,53 @@ export interface AuthResponse {
   user: User;
   accessToken: string;
   refreshToken: string;
+}
+
+// Parking Lot Vehicles Response
+export interface ParkingLotVehicleItem {
+  sessionId: number;
+  licensePlate: string;
+  vehicleType: 'car' | 'motorcycle' | 'truck';
+  isRegistered: boolean;
+  status?: ParkingSessionStatus; // 'active' = đang đỗ, 'completed' = đã ra
+  vehicle?: {
+    id: number;
+    licensePlate: string;
+    vehicleType: string;
+    userId: number;
+    user?: {
+      id: number;
+      fullName: string;
+      email: string;
+    };
+  };
+  parkingSlot: {
+    id: number;
+    slotCode: string;
+    status: string;
+  };
+  entryTime: string;
+  exitTime?: string; // For completed sessions
+  fee?: number;
+}
+
+export interface ParkingLotVehiclesResponse {
+  parkingLot: {
+    id: number;
+    name: string;
+    address: string;
+  };
+  totalVehicles: number;
+  vehicles: ParkingLotVehicleItem[];
+}
+
+// Revenue Response
+export interface DailyRevenueResponse {
+  date: string;
+  parkingLotId?: number;
+  parkingLotName?: string;
+  totalRevenue: number;
+  totalVehicles: number;
+  revenueByHour?: Array<{ hour: number; revenue: number; vehicles: number }>;
 }
 

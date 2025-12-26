@@ -4,6 +4,23 @@
     <p class="statistics__subtitle">Phân tích chi tiết hoạt động bãi đỗ xe</p>
   </div>
 
+  <!-- Filters -->
+  <div class="filters-panel" *ngIf="!loading">
+    <div class="filters-panel__content">
+      <label class="filter-item">
+        <span class="filter-label">Ngày</span>
+        <input type="date" [value]="selectedDate" (change)="selectedDate = $any($event.target).value; onDateChange()" class="filter-input" />
+      </label>
+      <label class="filter-item">
+        <span class="filter-label">Bãi đỗ</span>
+        <select [value]="selectedParkingLotId ?? ''" (change)="selectedParkingLotId = $any($event.target).value === '' ? null : +$any($event.target).value; onParkingLotChange()" class="filter-input">
+          <option value="">Tất cả bãi đỗ</option>
+          <option *ngFor="let lot of parkingLots()" [value]="lot.id">{{ lot.name }}</option>
+        </select>
+      </label>
+    </div>
+  </div>
+
   <div class="callout" *ngIf="error">{{ error }}</div>
   <div class="loading" *ngIf="loading">Đang tải dữ liệu...</div>
 
@@ -115,11 +132,59 @@
 
     <!-- Peak Hours -->
     <div class="chart-panel">
-      <h3 class="chart-panel__title">Giờ cao điểm</h3>
-      <div class="bar-chart">
-        <div class="bar" *ngFor="let hour of peakHours(); trackBy: trackByHour">
-          <div class="bar__fill" [style.height.%]="maxPeak() ? (hour.count / maxPeak()) * 100 : 0"></div>
-          <span class="bar__label">{{ hour.hour }}</span>
+      <div class="chart-panel__header">
+        <div>
+          <h3 class="chart-panel__title">Giờ cao điểm</h3>
+          <p class="chart-panel__subtitle">Phân tích lượt vào/ra theo giờ</p>
+        </div>
+        <div class="chart-panel__legend">
+          <span class="legend-item">
+            <span class="dot dot--entry"></span>
+            Vào
+          </span>
+          <span class="legend-item">
+            <span class="dot dot--exit"></span>
+            Ra
+          </span>
+        </div>
+      </div>
+      <div class="stacked-bar-chart-container">
+        <div class="stacked-bar-chart-wrapper">
+          <div class="stacked-bar-chart-y-axis">
+            <span *ngFor="let tick of getYAxisTicks(maxPeak())" class="y-axis-tick">
+              {{ tick }}
+            </span>
+          </div>
+          <div class="stacked-bar-chart-content">
+            <div class="stacked-bar-chart-grid"></div>
+            <div class="stacked-bar-chart-bars">
+              <div class="stacked-bar-item" *ngFor="let hour of peakHours(); trackBy: trackByHour">
+                <div class="stacked-bar-wrapper">
+                  <div class="stacked-bar-container">
+                    <div 
+                      class="stacked-bar-segment stacked-bar-segment--entry" 
+                      [style.height.%]="maxPeak() ? ((hour.entry || 0) / maxPeak()) * 100 : 0"
+                      [attr.data-value]="hour.entry || 0"
+                    >
+                      <div class="segment-value-label" *ngIf="hour.entry && hour.entry > 0">
+                        {{ hour.entry }}
+                      </div>
+                    </div>
+                    <div 
+                      class="stacked-bar-segment stacked-bar-segment--exit" 
+                      [style.height.%]="maxPeak() ? ((hour.exit || 0) / maxPeak()) * 100 : 0"
+                      [attr.data-value]="hour.exit || 0"
+                    >
+                      <div class="segment-value-label" *ngIf="hour.exit && hour.exit > 0">
+                        {{ hour.exit }}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                <div class="stacked-bar-label">{{ hour.hour }}</div>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
     </div>

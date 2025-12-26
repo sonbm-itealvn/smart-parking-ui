@@ -3,10 +3,12 @@ import { Injectable, inject } from '@angular/core';
 import { environment } from '../../../environments/environment';
 import {
   AuthResponse,
+  DailyRevenueResponse,
   ExitSessionResponse,
   LicensePlateLog,
   NotificationItem,
   ParkingLot,
+  ParkingLotVehiclesResponse,
   ParkingSession,
   ParkingSlot,
   Payment,
@@ -73,6 +75,10 @@ export class ApiClientService {
     return this.http.get<ParkingLot[]>(`${this.baseUrl}/api/parking-lots`);
   }
 
+  getParkingLotVehicles(parkingLotId: number) {
+    return this.http.get<ParkingLotVehiclesResponse>(`${this.baseUrl}/api/parking-lots/${parkingLotId}/vehicles`);
+  }
+
   createParkingLot(payload: Partial<ParkingLot>) {
     return this.http.post<ParkingLot>(`${this.baseUrl}/api/parking-lots`, payload);
   }
@@ -136,6 +142,17 @@ export class ApiClientService {
     return this.http.get<Payment[]>(`${this.baseUrl}/api/payments`);
   }
 
+  getDailyRevenue(params?: { date?: string; parkingLotId?: number }) {
+    let httpParams = new HttpParams();
+    if (params?.date) {
+      httpParams = httpParams.set('date', params.date);
+    }
+    if (params?.parkingLotId) {
+      httpParams = httpParams.set('parkingLotId', params.parkingLotId);
+    }
+    return this.http.get<DailyRevenueResponse>(`${this.baseUrl}/api/payments/revenue/daily`, { params: httpParams });
+  }
+
   // Vehicle detection webhook
   vehicleDetection(payload: { licensePlate: string; flag: 0 | 1; slotId?: number; parkingLotId?: number; image?: string }) {
     return this.http.post(`${this.baseUrl}/api/vehicle-detection`, payload);
@@ -144,6 +161,22 @@ export class ApiClientService {
   // FastAPI integration
   licensePlateLogs() {
     return this.http.get<LicensePlateLog[]>(`${this.baseUrl}/api/license-plate/logs`);
+  }
+
+  // Camera detection endpoints
+  detectLicensePlate(cameraId: number) {
+    return this.http.post(`${this.baseUrl}/api/cameras/${cameraId}/detect-license-plate`, {}, {
+      responseType: 'blob',
+      observe: 'response'
+    });
+  }
+
+  detectParkingSpace(cameraId: number, parkingLotId?: number) {
+    const body = parkingLotId ? { parkingLotId } : {};
+    return this.http.post(`${this.baseUrl}/api/cameras/${cameraId}/detect-parking-space`, body, {
+      responseType: 'blob',
+      observe: 'response'
+    });
   }
 }
 

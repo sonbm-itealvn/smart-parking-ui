@@ -1,8 +1,9 @@
 ﻿import { CommonModule } from '@angular/common';
 import { Component, OnInit, computed, inject, signal } from '@angular/core';
+import { FormsModule } from '@angular/forms';
 import { finalize, forkJoin } from 'rxjs';
 import { ApiClientService } from '../../core/services/api-client.service';
-import { ParkingSession, ParkingSlot, Payment, Vehicle } from '../../core/models/api.models';
+import { ParkingLot, ParkingSession, ParkingSlot, Payment, Vehicle } from '../../core/models/api.models';
 
 type SummaryCard = {
   title: string;
@@ -16,7 +17,7 @@ type RevenuePoint = { month: string; revenue: number; vehicles: number };
 
 type VehicleType = { name: string; value: number; color: string };
 
-type PeakHour = { hour: string; count: number };
+type PeakHour = { hour: string; count: number; entry?: number; exit?: number };
 
 type DurationPoint = { day: string; duration: number };
 
@@ -27,7 +28,7 @@ type LineNode<T> = T & { x: number; y: number };
 @Component({
   selector: 'app-statistics-page',
   standalone: true,
-  imports: [CommonModule],
+  imports: [CommonModule, FormsModule],
   templateUrl: './statistics.component.html',
   styleUrl: './statistics.component.scss',
   preserveWhitespaces: false
@@ -37,6 +38,13 @@ export class StatisticsComponent implements OnInit {
 
   loading = true;
   error: string | null = null;
+
+  // Filters
+  selectedDate: string = new Date().toISOString().split('T')[0]; // Today
+  selectedParkingLotId: number | null = null;
+  parkingLots = signal<ParkingLot[]>([]);
+  dailyRevenue = signal<any>(null);
+  revenueByHour = signal<Array<{ hour: number; revenue: number; vehicles: number }>>([]);
 
   summaryCards = signal<SummaryCard[]>([]);
   revenueByMonth = signal<RevenuePoint[]>([]);
@@ -52,7 +60,11 @@ export class StatisticsComponent implements OnInit {
   revenueChartVehiclesPath = computed(() =>
     this.revenueChart().vehicles.map((p) => `${p.x.toFixed(2)},${p.y.toFixed(2)}`).join(' ')
   );
-  maxPeak = computed(() => Math.max(...this.peakHours().map((item) => item.count), 0));
+  maxPeak = computed(() => {
+    const data = this.peakHours();
+    if (!data.length) return 0;
+    return Math.max(...data.map((item) => (item.entry || 0) + (item.exit || 0)), 0);
+  });
   maxDuration = computed(() => Math.max(...this.averageDuration().map((item) => item.duration), 0));
   averageDurationLine = computed(() => this.buildLineSeries(this.averageDuration(), (item) => item.duration));
   averageDurationPath = computed(() =>
@@ -61,9 +73,95 @@ export class StatisticsComponent implements OnInit {
       .join(' ')
   );
   vehiclePieBackground = computed(() => this.buildPieBackground(this.vehicleTypeData()));
+  
+  // Daily revenue by hour chart
+  revenueByHourChart = computed(() => {
+    const data = this.revenueByHour();
+    if (!data.length) return { revenue: [], vehicles: [] };
+    const revenueMax = Math.max(...data.map((item) => item.revenue), 1);
+    const vehiclesMax = Math.max(...data.map((item) => item.vehicles), 1);
+    const steps = Math.max(data.length - 1, 1);
+    
+    const revenue = data.map((item, index) => {
+      const x = (index / steps) * 100;
+      const y = 100 - (item.revenue / revenueMax) * 100;
+      return { ...item, x, y };
+    });
+    
+    const vehicles = data.map((item, index) => {
+      const x = (index / steps) * 100;
+      const y = 100 - (item.vehicles / vehiclesMax) * 100;
+      return { ...item, x, y };
+    });
+    
+    return { revenue, vehicles };
+  });
+  
+  revenueByHourRevenuePath = computed(() =>
+    this.revenueByHourChart().revenue.map((p) => `${p.x.toFixed(2)},${p.y.toFixed(2)}`).join(' ')
+  );
+  revenueByHourVehiclesPath = computed(() =>
+    this.revenueByHourChart().vehicles.map((p) => `${p.x.toFixed(2)},${p.y.toFixed(2)}`).join(' ')
+  );
 
   ngOnInit(): void {
+    this.loadParkingLots();
     this.loadData();
+  }
+
+  onDateChange(): void {
+    this.loadDailyRevenue();
+  }
+
+  onParkingLotChange(): void {
+    this.loadDailyRevenue();
+  }
+
+  private loadParkingLots(): void {
+    this.api.getParkingLots().subscribe({
+      next: (lots) => {
+        this.parkingLots.set(lots);
+      },
+      error: (err) => {
+        console.error('Error loading parking lots:', err);
+      }
+    });
+  }
+
+  private loadDailyRevenue(): void {
+    const params: any = {};
+    if (this.selectedDate) {
+      params.date = this.selectedDate;
+    }
+    if (this.selectedParkingLotId) {
+      params.parkingLotId = this.selectedParkingLotId;
+    }
+
+    this.api.getDailyRevenue(params).subscribe({
+      next: (response) => {
+        this.dailyRevenue.set(response);
+        if (response.revenueByHour) {
+          this.revenueByHour.set(response.revenueByHour);
+        }
+        // Update summary cards with daily revenue
+        this.updateSummaryWithDailyRevenue(response);
+      },
+      error: (err) => {
+        console.error('Error loading daily revenue:', err);
+      }
+    });
+  }
+
+  private updateSummaryWithDailyRevenue(revenue: any): void {
+    const cards = this.summaryCards();
+    if (cards.length > 0) {
+      cards[0] = {
+        ...cards[0],
+        value: `${revenue.totalRevenue.toLocaleString()} VNĐ`,
+        change: revenue.date ? `Ngày ${new Date(revenue.date).toLocaleDateString('vi-VN')}` : 'Hôm nay'
+      };
+      this.summaryCards.set([...cards]);
+    }
   }
 
   trackByMonth(_: number, item: RevenuePoint): string {
@@ -86,6 +184,16 @@ export class StatisticsComponent implements OnInit {
     return item.spot;
   }
 
+  getYAxisTicks(max: number): number[] {
+    if (max === 0) return [0];
+    const ticks: number[] = [];
+    const step = max / 4;
+    for (let i = 0; i <= 4; i++) {
+      ticks.push(Math.round(step * i));
+    }
+    return ticks;
+  }
+
   private loadData(): void {
     this.loading = true;
     this.error = null;
@@ -105,6 +213,8 @@ export class StatisticsComponent implements OnInit {
           this.peakHours.set(this.buildPeakHours(sessions));
           this.averageDuration.set(this.buildDurations(sessions));
           this.topSpots.set(this.buildTopSpots(sessions, slots));
+          // Load daily revenue after initial data
+          this.loadDailyRevenue();
         },
         error: () => {
           this.error = 'Không tải được dữ liệu thống kê.';
@@ -182,15 +292,24 @@ export class StatisticsComponent implements OnInit {
   }
 
   private buildPeakHours(sessions: ParkingSession[]): PeakHour[] {
-    const buckets = new Map<number, number>();
+    const entryBuckets = new Map<number, number>();
+    const exitBuckets = new Map<number, number>();
+    
     sessions.forEach((session) => {
-      const hour = new Date(session.entryTime).getHours();
-      buckets.set(hour, (buckets.get(hour) || 0) + 1);
+      const entryHour = new Date(session.entryTime).getHours();
+      entryBuckets.set(entryHour, (entryBuckets.get(entryHour) || 0) + 1);
+      
+      if (session.exitTime) {
+        const exitHour = new Date(session.exitTime).getHours();
+        exitBuckets.set(exitHour, (exitBuckets.get(exitHour) || 0) + 1);
+      }
     });
 
     return Array.from({ length: 24 }, (_, index) => ({
       hour: `${index.toString().padStart(2, '0')}:00`,
-      count: buckets.get(index) || 0
+      count: (entryBuckets.get(index) || 0) + (exitBuckets.get(index) || 0),
+      entry: entryBuckets.get(index) || 0,
+      exit: exitBuckets.get(index) || 0
     })).filter((_, index) => index % 3 === 0); // mỗi 3 giờ
   }
 

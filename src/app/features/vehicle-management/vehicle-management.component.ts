@@ -154,30 +154,23 @@ export class VehicleManagementComponent implements OnInit {
 
   handleCheckout(vehicle: VehicleRow): void {
     this.submitting = true;
+    this.error = null;
     this.api
       .exitParkingSession(vehicle.sessionId)
       .pipe(finalize(() => (this.submitting = false)))
       .subscribe({
         next: (response) => {
-          const session = response.parkingSession;
-          this.vehicles = this.vehicles.map((v) =>
-            v.sessionId === vehicle.sessionId
-              ? {
-                  ...v,
-                  status: session.status === 'completed' ? 'exited' : v.status,
-                  exitTime: session.exitTime || v.exitTime,
-                  fee: session.fee ?? v.fee,
-                  duration: this.buildDuration(vehicle.entryTime, session.exitTime || new Date().toISOString())
-                }
-              : v
-          );
+          console.log('Checkout response:', response);
           this.selectedVehicle = null;
+          // Reload data to get updated session with exitTime and fee
           if (this.selectedLotId) {
             this.loadVehiclesForLot(this.selectedLotId);
           }
         },
-        error: () => {
-          this.error = 'Không thể thực hiện xuất xe. Vui lòng thử lại.';
+        error: (err) => {
+          console.error('Checkout error:', err);
+          const errorMessage = err?.error?.error || err?.error?.message || err?.message;
+          this.error = errorMessage || 'Không thể thực hiện xuất xe. Vui lòng thử lại.';
         }
       });
   }
@@ -236,41 +229,80 @@ export class VehicleManagementComponent implements OnInit {
     this.loading = true;
     this.error = null;
 
-    forkJoin({
-      sessions: this.api.getParkingSessions(),
-      vehicles: this.api.getVehicles(),
-      slots: this.api.getParkingSlots({ parkingLotId: lotId })
-    })
+    this.api
+      .getParkingLotVehicles(lotId)
       .pipe(finalize(() => (this.loading = false)))
       .subscribe({
-        next: ({ sessions, vehicles, slots }) => {
-          this.parkingSlots = slots.filter((slot) => slot.status === 'available');
-          // Filter sessions by slots in this lot
-          const slotIds = new Set(slots.map(s => s.id));
-          const filteredSessions = sessions.filter(s => slotIds.has(s.parkingSlotId));
-          this.vehicles = this.composeRows(filteredSessions, vehicles, slots);
+        next: (response) => {
+          console.log('Parking lot vehicles response:', response);
+          // Update selected lot info if needed
+          if (response.parkingLot && this.selectedLot) {
+            this.selectedLot.name = response.parkingLot.name;
+            this.selectedLot.location = response.parkingLot.address;
+          }
+          // Load available slots for the add vehicle modal
+          this.api.getParkingSlots({ parkingLotId: lotId }).subscribe({
+            next: (slots) => {
+              this.parkingSlots = slots.filter((slot) => slot.status === 'available');
+            },
+            error: (err) => {
+              console.error('Error loading slots:', err);
+            }
+          });
+          // Compose vehicle rows from response
+          this.vehicles = this.composeRowsFromResponse(response);
         },
         error: (err) => {
+          console.error('Error loading vehicles:', err);
           this.error = err?.error?.message || 'Không tải được danh sách phương tiện.';
         }
       });
   }
 
+  private composeRowsFromResponse(response: any): VehicleRow[] {
+    return response.vehicles.map((item: any) => {
+      // Status: 'active' = đang đỗ, 'completed' = đã ra
+      const sessionStatus = item.status || 'active'; // Default to 'active' if not provided
+      const isExited = sessionStatus === 'completed';
+      
+      return {
+        sessionId: item.sessionId,
+        vehicleId: item.vehicle?.id || 0,
+        plate: item.licensePlate || item.vehicle?.licensePlate || 'N/A',
+        slot: item.parkingSlot?.slotCode || 'N/A',
+        entryTime: item.entryTime, // Keep as ISO string, format in template
+        exitTime: item.exitTime || undefined,
+        duration: item.exitTime && item.entryTime
+          ? this.buildDuration(item.entryTime, item.exitTime)
+          : undefined,
+        fee: item.fee,
+        status: isExited ? 'exited' : 'parked',
+        vehicleType: item.vehicleType || item.vehicle?.vehicleType || 'unknown'
+      };
+    });
+  }
+
+  // Keep old method for backward compatibility if needed
   private composeRows(sessions: ParkingSession[], vehicles: ApiVehicle[], slots: ParkingSlot[]): VehicleRow[] {
     const vehicleMap = new Map(vehicles.map((v) => [v.id, v]));
     const slotMap = new Map(slots.map((slot) => [slot.id, slot]));
 
     return sessions.map((session) => {
-      const vehicle = vehicleMap.get(session.vehicleId);
+      // Get vehicle if vehicleId exists, otherwise use session.licensePlate for guest vehicles
+      const vehicle = session.vehicleId ? vehicleMap.get(session.vehicleId) : null;
       const slot = slotMap.get(session.parkingSlotId);
       const isExited = session.status !== 'active';
+      
+      // Get license plate: from vehicle if exists, otherwise from session (guest vehicle)
+      const licensePlate = vehicle?.licensePlate || session.licensePlate || 'N/A';
+      
       return {
         sessionId: session.id,
-        vehicleId: session.vehicleId,
-        plate: vehicle?.licensePlate || 'N/A',
+        vehicleId: session.vehicleId || 0,
+        plate: licensePlate,
         slot: slot?.slotCode || 'N/A',
-        entryTime: new Date(session.entryTime).toLocaleString(),
-        exitTime: session.exitTime ? new Date(session.exitTime).toLocaleString() : undefined,
+        entryTime: session.entryTime, // Keep as ISO string, format in template
+        exitTime: session.exitTime || undefined,
         duration: session.exitTime
           ? this.buildDuration(session.entryTime, session.exitTime)
           : undefined,

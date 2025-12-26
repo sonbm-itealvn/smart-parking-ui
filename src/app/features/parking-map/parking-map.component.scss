@@ -251,12 +251,60 @@
   transform: translateY(-2px);
 }
 
+.camera-card--loading {
+  opacity: 0.7;
+}
+
+.camera-card--offline {
+  opacity: 0.6;
+}
+
 .camera-thumb {
   position: relative;
   aspect-ratio: 16 / 9;
   background-size: cover;
   background-position: center;
   background-color: #111827;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.camera-thumb--empty {
+  background: linear-gradient(135deg, #1f2937 0%, #111827 100%);
+}
+
+.camera-loading,
+.camera-offline {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  color: #ffffff;
+  background: rgba(17, 24, 39, 0.8);
+}
+
+.camera-loading svg,
+.camera-offline svg {
+  width: 32px;
+  height: 32px;
+}
+
+.camera-loading svg {
+  animation: spin 1s linear infinite;
+}
+
+.camera-offline svg {
+  animation: none;
+}
+
+.camera-loading span,
+.camera-offline span {
+  font-size: 0.875rem;
+  font-weight: 500;
 }
 
 .live-pill {
@@ -346,6 +394,26 @@
   margin: 0;
   font-size: 0.75rem;
   color: #6b7280;
+}
+
+.camera-license-plate {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 8px;
+  padding: 6px 10px;
+  background: #f0fdf4;
+  border: 1px solid #bbf7d0;
+  border-radius: 6px;
+  font-size: 0.75rem;
+  color: #15803d;
+  font-weight: 600;
+}
+
+.camera-license-plate svg {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
 }
 
 /* Filter Panel */
@@ -607,6 +675,54 @@
   background-size: cover;
   background-position: center;
   background-color: #111827;
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.camera-modal__loading,
+.camera-modal__offline {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  color: #ffffff;
+}
+
+.camera-modal__loading svg,
+.camera-modal__offline svg {
+  width: 48px;
+  height: 48px;
+  animation: spin 1s linear infinite;
+}
+
+.camera-modal__offline svg {
+  animation: none;
+}
+
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.camera-modal__license-plate {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+  font-size: 0.875rem;
+  color: #22c55e;
+  font-weight: 600;
+}
+
+.camera-modal__license-plate svg {
+  width: 16px;
+  height: 16px;
 }
 
 /* Buttons */

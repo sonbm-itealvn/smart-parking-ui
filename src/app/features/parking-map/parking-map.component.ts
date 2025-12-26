@@ -22,6 +22,8 @@ interface CameraFeed {
   location: string;
   imageUrl: string;
   status: 'active' | 'offline';
+  licensePlate?: string; // For camera 1 (detect-license-plate)
+  loading?: boolean;
 }
 
 type StatKey = 'total' | 'available' | 'occupied';
@@ -42,20 +44,22 @@ export class ParkingMapComponent implements OnInit, AfterViewInit, OnDestroy {
   private imageLayer: Konva.Layer | null = null;
   private transformer: Konva.Transformer | null = null;
 
-  readonly cameras: CameraFeed[] = [
+  cameras: CameraFeed[] = [
     {
       id: 1,
-      name: 'Tổng quan bãi xe',
-      location: 'Khu vực trung tâm',
-      imageUrl: 'https://images.unsplash.com/photo-1502877828070-33b167ad6860?auto=format&fit=crop&w=1200&q=80',
-      status: 'active'
+      name: 'Camera nhận diện biển số',
+      location: 'Lối vào chính',
+      imageUrl: '',
+      status: 'active',
+      loading: false
     },
     {
       id: 2,
-      name: 'Lối vào chính',
-      location: 'Cổng A',
-      imageUrl: 'https://images.unsplash.com/photo-1503736334956-4c8f8e92946d?auto=format&fit=crop&w=1200&q=80',
-      status: 'active'
+      name: 'Camera nhận diện vị trí đỗ',
+      location: 'Khu vực bãi đỗ',
+      imageUrl: '',
+      status: 'active',
+      loading: false
     }
   ];
 
@@ -165,6 +169,12 @@ export class ParkingMapComponent implements OnInit, AfterViewInit, OnDestroy {
 
   ngOnDestroy(): void {
     this.destroyCanvas();
+    // Clean up blob URLs
+    this.cameras.forEach(camera => {
+      if (camera.imageUrl && camera.imageUrl.startsWith('blob:')) {
+        URL.revokeObjectURL(camera.imageUrl);
+      }
+    });
   }
 
   selectLot(lot: ParkingLot): void {
@@ -211,11 +221,67 @@ export class ParkingMapComponent implements OnInit, AfterViewInit, OnDestroy {
       .subscribe({
         next: ({ slots, sessions, vehicles }) => {
           this.spots = this.hydrateSlots(slots, sessions, vehicles);
+          // Load camera feeds after loading slots
+          this.loadCameraFeeds(lotId);
         },
         error: (err) => {
           this.error = err?.error?.message || 'Không thể tải dữ liệu vị trí đỗ.';
         }
       });
+  }
+
+  private loadCameraFeeds(parkingLotId?: number): void {
+    // Camera 1: Detect license plate
+    const camera1 = this.cameras.find(c => c.id === 1);
+    if (camera1) {
+      camera1.loading = true;
+      this.api.detectLicensePlate(1).subscribe({
+        next: (response) => {
+          const licensePlate = response.headers.get('X-License-Plate');
+          const blob = response.body;
+          if (blob) {
+            const imageUrl = URL.createObjectURL(blob);
+            // Revoke old URL if exists
+            if (camera1.imageUrl && camera1.imageUrl.startsWith('blob:')) {
+              URL.revokeObjectURL(camera1.imageUrl);
+            }
+            camera1.imageUrl = imageUrl;
+            camera1.licensePlate = licensePlate || undefined;
+            camera1.loading = false;
+          }
+        },
+        error: (err) => {
+          console.error('Error loading camera 1:', err);
+          camera1.loading = false;
+          camera1.status = 'offline';
+        }
+      });
+    }
+
+    // Camera 2: Detect parking space
+    const camera2 = this.cameras.find(c => c.id === 2);
+    if (camera2) {
+      camera2.loading = true;
+      this.api.detectParkingSpace(2, parkingLotId).subscribe({
+        next: (response) => {
+          const blob = response.body;
+          if (blob) {
+            const imageUrl = URL.createObjectURL(blob);
+            // Revoke old URL if exists
+            if (camera2.imageUrl && camera2.imageUrl.startsWith('blob:')) {
+              URL.revokeObjectURL(camera2.imageUrl);
+            }
+            camera2.imageUrl = imageUrl;
+            camera2.loading = false;
+          }
+        },
+        error: (err) => {
+          console.error('Error loading camera 2:', err);
+          camera2.loading = false;
+          camera2.status = 'offline';
+        }
+      });
+    }
   }
 
   handleSearch(value: string): void {

@@ -1,8 +1,9 @@
 ﻿import { CommonModule } from '@angular/common';
 import { Component, OnInit, computed, inject, signal } from '@angular/core';
-import { finalize, forkJoin, of } from 'rxjs';
+import { FormsModule } from '@angular/forms';
+import { finalize, forkJoin } from 'rxjs';
 import { ApiClientService } from '../../core/services/api-client.service';
-import { ParkingSession, ParkingSlot, Payment, Vehicle } from '../../core/models/api.models';
+import { ParkingLot, ParkingSession, ParkingSlot, Payment, Vehicle } from '../../core/models/api.models';
 
 type StatCard = {
   title: string;
@@ -30,7 +31,7 @@ type OccupancyPoint = { time: string; rate: number };
 @Component({
   selector: 'app-dashboard-page',
   standalone: true,
-  imports: [CommonModule],
+  imports: [CommonModule, FormsModule],
   templateUrl: './dashboard.component.html',
   styleUrl: './dashboard.component.scss'
 })
@@ -40,18 +41,141 @@ export class DashboardComponent implements OnInit {
   loading = true;
   error: string | null = null;
 
+  // Revenue data
+  selectedDate: string = new Date().toISOString().split('T')[0];
+  selectedParkingLotId: number | null = null;
+  parkingLots = signal<ParkingLot[]>([]);
+  dailyRevenue = signal<any>(null);
+  revenueByHour = signal<Array<{ hour: number; revenue: number; vehicles: number }>>([]);
+  revenueByWeek = signal<Array<{ date: string; revenue: number; vehicles: number }>>([]);
+
   stats = signal<StatCard[]>([]);
   revenueData = signal<RevenuePoint[]>([]);
   occupancyData = signal<OccupancyPoint[]>([]);
   recentActivities = signal<ActivityItem[]>([]);
 
-  revenueMax = computed(() => Math.max(...this.revenueData().map((point) => point.value), 0));
+  revenueMax = computed(() => {
+    const data = this.revenueByHour();
+    if (!data.length) return Math.max(...this.revenueData().map((point) => point.value), 0);
+    return Math.max(...data.map((item) => item.revenue), 0);
+  });
+  
+  revenueWeekMax = computed(() => Math.max(...this.revenueByWeek().map((point) => point.revenue), 0));
+  
   occupancyChart = computed(() => this.buildLineChart());
   occupancyPath = computed(() => this.occupancyChart().map((point) => `${point.x.toFixed(2)},${point.y.toFixed(2)}`).join(' '));
   occupancyMax = computed(() => Math.max(...this.occupancyData().map((point) => point.rate), 0));
 
   ngOnInit(): void {
+    this.loadParkingLots();
     this.loadData();
+    this.loadRevenueData();
+  }
+
+  onDateChange(): void {
+    this.loadRevenueData();
+  }
+
+  onParkingLotChange(): void {
+    this.loadRevenueData();
+  }
+
+  private loadParkingLots(): void {
+    this.api.getParkingLots().subscribe({
+      next: (lots) => {
+        this.parkingLots.set(lots);
+      },
+      error: (err) => {
+        console.error('Error loading parking lots:', err);
+      }
+    });
+  }
+
+  private loadRevenueData(): void {
+    // Load today's revenue
+    const params: any = { date: this.selectedDate };
+    if (this.selectedParkingLotId) {
+      params.parkingLotId = this.selectedParkingLotId;
+    }
+
+    this.api.getDailyRevenue(params).subscribe({
+      next: (response) => {
+        this.dailyRevenue.set(response);
+        if (response.revenueByHour) {
+          this.revenueByHour.set(response.revenueByHour);
+        }
+        // Update stats with daily revenue
+        this.updateStatsWithRevenue(response);
+      },
+      error: (err) => {
+        console.error('Error loading daily revenue:', err);
+      }
+    });
+
+    // Load last 7 days revenue
+    this.loadWeeklyRevenue();
+  }
+
+  private loadWeeklyRevenue(): void {
+    const weekData: Array<{ date: string; revenue: number; vehicles: number }> = [];
+    const today = new Date();
+    
+    // Load revenue for last 7 days
+    const promises = Array.from({ length: 7 }, (_, i) => {
+      const date = new Date(today);
+      date.setDate(date.getDate() - i);
+      const dateStr = date.toISOString().split('T')[0];
+      
+      const params: any = { date: dateStr };
+      if (this.selectedParkingLotId) {
+        params.parkingLotId = this.selectedParkingLotId;
+      }
+      
+      return this.api.getDailyRevenue(params).toPromise().then(response => ({
+        date: dateStr,
+        revenue: response?.totalRevenue || 0,
+        vehicles: response?.totalVehicles || 0
+      })).catch(() => ({
+        date: dateStr,
+        revenue: 0,
+        vehicles: 0
+      }));
+    });
+
+    Promise.all(promises).then(data => {
+      const reversed = data.reverse(); // Reverse to show oldest to newest
+      this.revenueByWeek.set(reversed);
+      // Update revenueData after loading weekly data
+      this.updateRevenueDataFromWeek();
+    });
+  }
+
+  private updateRevenueDataFromWeek(): void {
+    const weekdays = ['CN', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7'];
+    const weekData = this.revenueByWeek();
+    
+    if (weekData.length > 0) {
+      const data: RevenuePoint[] = weekData.map((item) => {
+        const date = new Date(item.date);
+        const dayIndex = date.getDay();
+        return {
+          name: weekdays[dayIndex],
+          value: Math.round(item.revenue / 1000) // Convert to thousands
+        };
+      });
+      this.revenueData.set(data);
+    }
+  }
+
+  private updateStatsWithRevenue(revenue: any): void {
+    const stats = this.stats();
+    if (stats.length > 0 && revenue) {
+      // Update first stat card with revenue if it exists
+      const revenueStat = stats.find(s => s.title.includes('Doanh thu') || s.title.includes('revenue'));
+      if (revenueStat) {
+        revenueStat.value = `${revenue.totalRevenue.toLocaleString()} VNĐ`;
+      }
+    }
   }
 
   trackByStat(_: number, item: StatCard): string {
@@ -77,6 +201,34 @@ export class DashboardComponent implements OnInit {
     return change.type;
   }
 
+  getYAxisTicks(max: number): number[] {
+    if (max === 0) return [0];
+    const ticks: number[] = [];
+    const step = max / 4;
+    for (let i = 0; i <= 4; i++) {
+      ticks.push(Math.round(step * i));
+    }
+    return ticks;
+  }
+
+  formatYAxisValue(value: number): string {
+    if (value >= 1000000) {
+      return (value / 1000000).toFixed(1) + 'M';
+    } else if (value >= 1000) {
+      return (value / 1000).toFixed(0) + 'K';
+    }
+    return value.toString();
+  }
+
+  formatRevenue(value: number): string {
+    if (value >= 1000000) {
+      return (value / 1000000).toFixed(1) + 'M';
+    } else if (value >= 1000) {
+      return (value / 1000).toFixed(0) + 'K';
+    }
+    return value.toLocaleString();
+  }
+
   private loadData(): void {
     this.loading = true;
     this.error = null;
@@ -98,6 +250,10 @@ export class DashboardComponent implements OnInit {
           this.populateRevenue(payments);
           this.populateOccupancy(sessions);
           this.populateActivities(sessions, vehicles, slots);
+          // Load weekly revenue after initial data
+          if (this.revenueByWeek().length === 0) {
+            this.loadWeeklyRevenue();
+          }
         },
         error: () => {
           this.error = 'Không tải được dữ liệu tổng quan từ máy chủ.';
@@ -120,26 +276,43 @@ export class DashboardComponent implements OnInit {
   }
 
   private populateRevenue(payments: Payment[]): void {
+    // This method is kept for backward compatibility
+    // But we'll use revenueByWeek from API instead
     const weekdays = ['CN', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7'];
-    const now = new Date();
-    const last7Days = payments.filter((payment) => {
-      const day = new Date(payment.paymentTime);
-      const diff = (now.getTime() - day.getTime()) / (1000 * 60 * 60 * 24);
-      return diff <= 7;
-    });
+    const weekData = this.revenueByWeek();
+    
+    if (weekData.length > 0) {
+      const data: RevenuePoint[] = weekData.map((item, index) => {
+        const date = new Date(item.date);
+        const dayIndex = date.getDay();
+        return {
+          name: weekdays[dayIndex],
+          value: Math.round(item.revenue / 1000) // Convert to thousands
+        };
+      });
+      this.revenueData.set(data);
+    } else {
+      // Fallback to old method if no API data
+      const now = new Date();
+      const last7Days = payments.filter((payment) => {
+        const day = new Date(payment.paymentTime);
+        const diff = (now.getTime() - day.getTime()) / (1000 * 60 * 60 * 24);
+        return diff <= 7;
+      });
 
-    const grouped = new Array(7).fill(0);
-    last7Days.forEach((payment) => {
-      const dayIndex = new Date(payment.paymentTime).getDay();
-      grouped[dayIndex] += payment.amount;
-    });
+      const grouped = new Array(7).fill(0);
+      last7Days.forEach((payment) => {
+        const dayIndex = new Date(payment.paymentTime).getDay();
+        grouped[dayIndex] += payment.amount;
+      });
 
-    const data: RevenuePoint[] = grouped.map((value, index) => ({
-      name: weekdays[index],
-      value: Math.round(value / 1000)
-    }));
+      const data: RevenuePoint[] = grouped.map((value, index) => ({
+        name: weekdays[index],
+        value: Math.round(value / 1000)
+      }));
 
-    this.revenueData.set(data);
+      this.revenueData.set(data);
+    }
   }
 
   private populateOccupancy(sessions: ParkingSession[]): void {
@@ -163,12 +336,15 @@ export class DashboardComponent implements OnInit {
       .sort((a, b) => new Date(b.entryTime).getTime() - new Date(a.entryTime).getTime())
       .slice(0, 6)
       .map((session) => {
-        const vehicle = vehicleMap.get(session.vehicleId);
+        // Handle both registered vehicles (vehicleId exists) and guest vehicles (vehicleId is null)
+        const vehicle = session.vehicleId ? vehicleMap.get(session.vehicleId) : null;
         const slot = slotMap.get(session.parkingSlotId);
+        // Get license plate: from vehicle if exists, otherwise from session (guest vehicle)
+        const licensePlate = vehicle?.licensePlate || session.licensePlate || 'N/A';
         return {
           id: session.id,
           type: session.status === 'active' ? 'in' : 'out',
-          plate: vehicle?.licensePlate || 'N/A',
+          plate: licensePlate,
           time: new Date(session.entryTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
           spot: slot?.slotCode || 'N/A'
         };
