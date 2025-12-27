@@ -19,6 +19,9 @@ export interface ParkingLot {
   location: string;
   totalSlots: number;
   pricePerHour: number;
+  map?: string; // URL of the parking lot map image
+  mapWidth?: number; // Original width of the map image
+  mapHeight?: number; // Original height of the map image
   createdAt?: string;
 }
 

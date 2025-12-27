@@ -105,6 +105,10 @@ export class ParkingMapComponent implements OnInit, AfterViewInit, OnDestroy {
     pricePerHour: 0
   };
 
+  // New lot map upload
+  newLotMapFile: File | null = null;
+  newLotMapPreviewUrl: string | null = null;
+
   newSlot: Partial<ParkingSlot> = {
     parkingLotId: undefined,
     slotCode: '',
@@ -212,9 +216,19 @@ export class ParkingMapComponent implements OnInit, AfterViewInit, OnDestroy {
     // Load cameras for this parking lot
     this.loadCamerasForLot(lot.id);
     // Reset map image when switching lots
-    this.mapImageUrl = null;
     this.mapImageFile = null;
     this.destroyMapCanvas();
+    
+    // Load map image from parking lot's map field if available
+    if (lot.map) {
+      this.mapImageUrl = lot.map;
+      // Initialize map canvas after a short delay to ensure DOM is ready
+      setTimeout(() => {
+        this.initMapCanvas();
+      }, 100);
+    } else {
+      this.mapImageUrl = null;
+    }
   }
 
   loadCamerasForLot(parkingLotId: number): void {
@@ -303,6 +317,30 @@ export class ParkingMapComponent implements OnInit, AfterViewInit, OnDestroy {
       .subscribe({
         next: (lots) => {
           this.parkingLots = lots;
+          
+          // If viewing a specific lot, update its info (including map) from the refreshed list
+          if (this.selectedLotId) {
+            const updatedLot = lots.find(lot => lot.id === this.selectedLotId);
+            if (updatedLot) {
+              this.selectedLot = updatedLot;
+              // Update map image if it exists
+              if (updatedLot.map) {
+                const mapChanged = this.mapImageUrl !== updatedLot.map;
+                this.mapImageUrl = updatedLot.map;
+                // Reinitialize map canvas if map URL changed
+                if (mapChanged) {
+                  this.destroyMapCanvas();
+                  setTimeout(() => {
+                    this.initMapCanvas();
+                  }, 100);
+                }
+              } else if (this.mapImageUrl) {
+                // If lot no longer has map, clear it
+                this.mapImageUrl = null;
+                this.destroyMapCanvas();
+              }
+            }
+          }
         },
         error: (err) => {
           this.error = err?.error?.message || 'Không thể tải danh sách bãi đỗ.';
@@ -811,7 +849,37 @@ export class ParkingMapComponent implements OnInit, AfterViewInit, OnDestroy {
 
   openAddLotModal(): void {
     this.newLot = { name: '', location: '', totalSlots: 0, pricePerHour: 0 };
+    this.newLotMapFile = null;
+    this.newLotMapPreviewUrl = null;
     this.showAddLotModal = true;
+  }
+
+  onNewLotMapSelected(event: Event): void {
+    const input = event.target as HTMLInputElement;
+    if (input.files && input.files[0]) {
+      const file = input.files[0];
+      this.newLotMapFile = file;
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        this.newLotMapPreviewUrl = e.target?.result as string;
+      };
+      reader.readAsDataURL(file);
+    }
+  }
+
+  clearNewLotMap(): void {
+    this.newLotMapFile = null;
+    this.newLotMapPreviewUrl = null;
+    // Reset file input - find the one in the add lot modal
+    setTimeout(() => {
+      const modal = document.querySelector('.modal');
+      if (modal) {
+        const fileInput = modal.querySelector('input[type="file"][accept="image/*"]') as HTMLInputElement;
+        if (fileInput) {
+          fileInput.value = '';
+        }
+      }
+    }, 0);
   }
 
   closeAddLotModal(): void {
@@ -829,8 +897,14 @@ export class ParkingMapComponent implements OnInit, AfterViewInit, OnDestroy {
   }
 
   openSlotEditorModal(): void {
-    this.uploadedImageUrl = null;
-    this.uploadedImageFile = null;
+    // Use map image from parking lot if available, otherwise reset
+    if (this.selectedLot?.map) {
+      this.uploadedImageUrl = this.selectedLot.map;
+      this.uploadedImageFile = null; // No file since it's from the parking lot
+    } else {
+      this.uploadedImageUrl = null;
+      this.uploadedImageFile = null;
+    }
     this.slots = [];
     this.currentSlotIndex = null;
     this.isDrawing = false;
@@ -1144,8 +1218,8 @@ export class ParkingMapComponent implements OnInit, AfterViewInit, OnDestroy {
   }
 
   async uploadImageAndCreateSlots(): Promise<void> {
-    if (!this.uploadedImageFile || !this.selectedLotId) {
-      this.error = 'Vui lòng upload ảnh và chọn bãi đỗ.';
+    if (!this.uploadedImageUrl || !this.selectedLotId) {
+      this.error = 'Vui lòng có ảnh bản đồ và chọn bãi đỗ.';
       return;
     }
 
@@ -1165,8 +1239,11 @@ export class ParkingMapComponent implements OnInit, AfterViewInit, OnDestroy {
     this.error = null;
 
     try {
-      // Upload ảnh
-      await firstValueFrom(this.api.uploadImage(this.uploadedImageFile, this.selectedLotId));
+      // If a new image file was uploaded, upload it first
+      // Otherwise, the image is already from the parking lot's map field
+      if (this.uploadedImageFile) {
+        await firstValueFrom(this.api.uploadImage(this.uploadedImageFile, this.selectedLotId));
+      }
       
       // Tạo tất cả slots
       const createPromises = this.slots.map(slot => {
@@ -1203,29 +1280,98 @@ export class ParkingMapComponent implements OnInit, AfterViewInit, OnDestroy {
     }
   }
 
-  handleCreateLot(): void {
+  async handleCreateLot(): Promise<void> {
     if (!this.newLot.name || !this.newLot.location || !this.newLot.totalSlots || !this.newLot.pricePerHour) {
       return;
     }
 
     this.submitting = true;
-    this.api
-      .createParkingLot(this.newLot)
-      .pipe(finalize(() => (this.submitting = false)))
-      .subscribe({
-        next: () => {
-          this.closeAddLotModal();
-          this.loadParkingLots();
-        },
-        error: (err) => {
-          const errorMessage = err?.error?.error || err?.error?.message || err?.message;
-          if (errorMessage?.includes('permission') || errorMessage?.includes('Access denied')) {
-            this.error = 'Bạn không có quyền thực hiện thao tác này. Chức năng này chỉ dành cho quản trị viên.';
-          } else {
-            this.error = errorMessage || 'Không thể tạo bãi đỗ mới. Vui lòng thử lại.';
+    this.error = null;
+
+    try {
+      const payload: Partial<ParkingLot> = {
+        name: this.newLot.name,
+        location: this.newLot.location,
+        totalSlots: this.newLot.totalSlots,
+        pricePerHour: this.newLot.pricePerHour
+      };
+
+      // If map image is provided, upload it first and get dimensions
+      if (this.newLotMapFile) {
+        try {
+          // Upload image
+          const uploadResult = await firstValueFrom(
+            this.api.uploadImage(this.newLotMapFile).pipe(
+              catchError((err) => {
+                this.error = err?.error?.message || 'Không thể upload ảnh bản đồ. Vui lòng thử lại.';
+                throw err;
+              })
+            )
+          );
+
+          // Get image URL from response
+          const imageUrl = uploadResult?.image?.url;
+          if (imageUrl) {
+            payload.map = imageUrl;
+
+            // Get original image dimensions
+            const dimensions = await this.getImageDimensions(this.newLotMapFile);
+            if (dimensions) {
+              payload.mapWidth = dimensions.width;
+              payload.mapHeight = dimensions.height;
+            }
           }
+        } catch (err) {
+          // Error already set in catchError above
+          this.submitting = false;
+          return;
         }
-      });
+      }
+
+      // Create parking lot with map data
+      this.api
+        .createParkingLot(payload)
+        .pipe(finalize(() => (this.submitting = false)))
+        .subscribe({
+          next: () => {
+            this.closeAddLotModal();
+            this.loadParkingLots();
+          },
+          error: (err) => {
+            const errorMessage = err?.error?.error || err?.error?.message || err?.message;
+            if (errorMessage?.includes('permission') || errorMessage?.includes('Access denied')) {
+              this.error = 'Bạn không có quyền thực hiện thao tác này. Chức năng này chỉ dành cho quản trị viên.';
+            } else {
+              this.error = errorMessage || 'Không thể tạo bãi đỗ mới. Vui lòng thử lại.';
+            }
+          }
+        });
+    } catch (err: any) {
+      this.submitting = false;
+      this.error = err?.message || 'Có lỗi xảy ra khi tạo bãi đỗ.';
+    }
+  }
+
+  private getImageDimensions(file: File): Promise<{ width: number; height: number } | null> {
+    return new Promise((resolve) => {
+      const img = new Image();
+      const url = URL.createObjectURL(file);
+      
+      img.onload = () => {
+        URL.revokeObjectURL(url);
+        resolve({
+          width: img.naturalWidth,
+          height: img.naturalHeight
+        });
+      };
+      
+      img.onerror = () => {
+        URL.revokeObjectURL(url);
+        resolve(null);
+      };
+      
+      img.src = url;
+    });
   }
 
   handleCreateSlot(): void {
@@ -1340,6 +1486,7 @@ export class ParkingMapComponent implements OnInit, AfterViewInit, OnDestroy {
     this.error = null;
 
     try {
+      // Upload image first
       const result = await firstValueFrom(
         this.api.uploadImage(this.mapImageFile, this.selectedLotId).pipe(
           catchError((err) => {
@@ -1349,10 +1496,49 @@ export class ParkingMapComponent implements OnInit, AfterViewInit, OnDestroy {
         )
       );
       
-      // If backend returns image URL, use it; otherwise use local URL
-      if (result?.image?.url) {
-        this.mapImageUrl = result.image.url;
+      // Get image URL from response
+      const imageUrl = result?.image?.url;
+      if (!imageUrl) {
+        this.error = 'Upload ảnh thành công nhưng không nhận được URL. Vui lòng thử lại.';
+        this.uploadingMapImage = false;
+        return;
       }
+
+      // Get original image dimensions
+      const dimensions = await this.getImageDimensions(this.mapImageFile);
+      
+      // Update parking lot with map image URL and dimensions
+      const updatePayload: Partial<ParkingLot> = {
+        map: imageUrl
+      };
+      
+      if (dimensions) {
+        updatePayload.mapWidth = dimensions.width;
+        updatePayload.mapHeight = dimensions.height;
+      }
+
+      // Update parking lot in database
+      await firstValueFrom(
+        this.api.updateParkingLot(this.selectedLotId, updatePayload).pipe(
+          catchError((err) => {
+            this.error = err?.error?.message || 'Không thể cập nhật thông tin bãi đỗ. Vui lòng thử lại.';
+            return throwError(() => err);
+          })
+        )
+      );
+
+      // Update local state
+      this.mapImageUrl = imageUrl;
+      if (this.selectedLot) {
+        this.selectedLot.map = imageUrl;
+        if (dimensions) {
+          this.selectedLot.mapWidth = dimensions.width;
+          this.selectedLot.mapHeight = dimensions.height;
+        }
+      }
+      
+      // Reload parking lots to get updated data
+      this.loadParkingLots();
       
       // Reload slots to draw on map
       if (this.selectedLotId) {

@@ -343,6 +343,32 @@
         <span>Giá mỗi giờ (VNĐ) <span class="required">*</span></span>
         <input type="number" [(ngModel)]="newLot.pricePerHour" placeholder="Ví dụ: 15000" />
       </label>
+      <label>
+        <span>Ảnh bản đồ bãi đỗ (tùy chọn)</span>
+        <div class="map-upload-container">
+          <label class="map-upload-label" [class.map-upload-label--has-file]="newLotMapFile">
+            <input #mapFileInput type="file" accept="image/*" (change)="onNewLotMapSelected($event)" style="display: none;" />
+            <div class="map-upload-content" *ngIf="!newLotMapPreviewUrl">
+              <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                <polyline points="17 8 12 3 7 8"></polyline>
+                <line x1="12" y1="3" x2="12" y2="15"></line>
+              </svg>
+              <p>Click để chọn ảnh bản đồ</p>
+            </div>
+            <img *ngIf="newLotMapPreviewUrl" [src]="newLotMapPreviewUrl" alt="Map preview" class="map-upload-preview" />
+          </label>
+          <button 
+            type="button" 
+            class="btn btn-ghost btn-sm" 
+            *ngIf="newLotMapFile" 
+            (click)="clearNewLotMap()"
+            style="margin-top: 8px;"
+          >
+            Xóa ảnh
+          </button>
+        </div>
+      </label>
     </div>
     <footer>
       <button type="button" class="btn btn-ghost" (click)="closeAddLotModal()">Hủy</button>
@@ -408,7 +434,14 @@
       <div class="slot-editor">
         <!-- Step 1: Upload Image -->
         <div class="slot-editor__section">
-          <h4>Bước 1: Upload ảnh bãi đỗ</h4>
+          <h4>Bước 1: Ảnh bãi đỗ</h4>
+          <div *ngIf="uploadedImageUrl && !uploadedImageFile" class="slot-editor__info">
+            <svg viewBox="0 0 20 20" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="10" cy="10" r="8"></circle>
+              <path d="M10 6v4M10 14h.01" stroke-linecap="round"></path>
+            </svg>
+            <span>Đang sử dụng ảnh bản đồ từ bãi đỗ. Bạn có thể upload ảnh mới để thay đổi.</span>
+          </div>
           <label class="upload-area">
             <input type="file" accept="image/*" (change)="onImageSelected($event)" style="display: none;" />
             <div class="upload-area__content" *ngIf="!uploadedImageUrl">
@@ -499,7 +532,7 @@
       <button 
         type="button" 
         class="btn btn-primary" 
-        [disabled]="submitting || !uploadedImageFile || slots.length === 0" 
+        [disabled]="submitting || !uploadedImageUrl || slots.length === 0" 
         (click)="uploadImageAndCreateSlots()"
       >
         {{ submitting ? 'Đang lưu...' : `Lưu ${slots.length} vị trí đỗ` }}

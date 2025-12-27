@@ -85,6 +85,10 @@ export class ApiClientService {
     return this.http.post<ParkingLot>(`${this.baseUrl}/api/parking-lots`, payload);
   }
 
+  updateParkingLot(id: number, payload: Partial<ParkingLot>) {
+    return this.http.put<ParkingLot>(`${this.baseUrl}/api/parking-lots/${id}`, payload);
+  }
+
   // Parking Slots
   getParkingSlots(params?: { parkingLotId?: number }) {
     let httpParams = new HttpParams();
