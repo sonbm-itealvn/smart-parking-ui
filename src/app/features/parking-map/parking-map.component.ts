@@ -1,7 +1,7 @@
 ﻿import { CommonModule } from '@angular/common';
 import { Component, OnInit, inject, ViewChild, ElementRef, AfterViewInit, OnDestroy } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { finalize, forkJoin, firstValueFrom, catchError, of } from 'rxjs';
+import { finalize, forkJoin, firstValueFrom, catchError, of, throwError } from 'rxjs';
 import Konva from 'konva';
 import { ApiClientService } from '../../core/services/api-client.service';
 import { ParkingSession, ParkingSlot, ParkingSlotStatus, ParkingLot, Vehicle, ProcessVehicleResponse, Camera } from '../../core/models/api.models';
@@ -69,6 +69,17 @@ export class ParkingMapComponent implements OnInit, AfterViewInit, OnDestroy {
   readonly now = new Date();
   loading = true;
   error: string | null = null;
+
+  // Map Image
+  @ViewChild('mapCanvasContainer', { static: false }) mapCanvasContainer!: ElementRef<HTMLDivElement>;
+  mapImageUrl: string | null = null;
+  mapImageFile: File | null = null;
+  mapStage: Konva.Stage | null = null;
+  mapImageLayer: Konva.Layer | null = null;
+  mapSlotsLayer: Konva.Layer | null = null;
+  mapZoomLevel = 1;
+  mapStagePosition = { x: 0, y: 0 };
+  uploadingMapImage = false;
 
   // Modals
   showAddLotModal = false;
@@ -186,6 +197,7 @@ export class ParkingMapComponent implements OnInit, AfterViewInit, OnDestroy {
 
   ngOnDestroy(): void {
     this.destroyCanvas();
+    this.destroyMapCanvas();
     // Stop all camera streams
     this.cameras.forEach(camera => {
       this.stopCameraStream(camera);
@@ -199,6 +211,10 @@ export class ParkingMapComponent implements OnInit, AfterViewInit, OnDestroy {
     this.loadSlotsForLot(lot.id);
     // Load cameras for this parking lot
     this.loadCamerasForLot(lot.id);
+    // Reset map image when switching lots
+    this.mapImageUrl = null;
+    this.mapImageFile = null;
+    this.destroyMapCanvas();
   }
 
   loadCamerasForLot(parkingLotId: number): void {
@@ -307,6 +323,10 @@ export class ParkingMapComponent implements OnInit, AfterViewInit, OnDestroy {
       .subscribe({
         next: ({ slots, sessions, vehicles }) => {
           this.spots = this.hydrateSlots(slots, sessions, vehicles);
+          // Draw slots on map if map image is loaded
+          if (this.mapImageUrl && this.mapStage) {
+            this.drawSlotsOnMap(slots);
+          }
         },
         error: (err) => {
           this.error = err?.error?.message || 'Không thể tải dữ liệu vị trí đỗ.';
@@ -1293,5 +1313,308 @@ export class ParkingMapComponent implements OnInit, AfterViewInit, OnDestroy {
         parkingLotId: slot.parkingLotId
       };
     });
+  }
+
+  // Map Image Methods
+  onMapImageSelected(event: Event): void {
+    const input = event.target as HTMLInputElement;
+    if (input.files && input.files[0]) {
+      const file = input.files[0];
+      this.mapImageFile = file;
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        this.mapImageUrl = e.target?.result as string;
+        setTimeout(() => this.initMapCanvas(), 100);
+      };
+      reader.readAsDataURL(file);
+    }
+  }
+
+  async uploadMapImage(): Promise<void> {
+    if (!this.mapImageFile || !this.selectedLotId) {
+      this.error = 'Vui lòng chọn ảnh và bãi đỗ.';
+      return;
+    }
+
+    this.uploadingMapImage = true;
+    this.error = null;
+
+    try {
+      const result = await firstValueFrom(
+        this.api.uploadImage(this.mapImageFile, this.selectedLotId).pipe(
+          catchError((err) => {
+            this.error = err?.error?.message || 'Không thể upload ảnh. Vui lòng thử lại.';
+            return throwError(() => err);
+          })
+        )
+      );
+      
+      // If backend returns image URL, use it; otherwise use local URL
+      if (result?.image?.url) {
+        this.mapImageUrl = result.image.url;
+      }
+      
+      // Reload slots to draw on map
+      if (this.selectedLotId) {
+        this.loadSlotsForLot(this.selectedLotId);
+      }
+    } catch (err) {
+      console.error('Error uploading map image:', err);
+    } finally {
+      this.uploadingMapImage = false;
+    }
+  }
+
+  initMapCanvas(): void {
+    if (!this.mapCanvasContainer || !this.mapImageUrl) {
+      return;
+    }
+
+    this.destroyMapCanvas();
+
+    const container = this.mapCanvasContainer.nativeElement;
+    const width = container.offsetWidth || 800;
+    const height = container.offsetHeight || 600;
+
+    this.mapStage = new Konva.Stage({
+      container: container,
+      width: width,
+      height: height
+    });
+
+    this.mapImageLayer = new Konva.Layer();
+    this.mapStage.add(this.mapImageLayer);
+
+    this.mapSlotsLayer = new Konva.Layer();
+    this.mapStage.add(this.mapSlotsLayer);
+
+    this.loadMapImageToCanvas();
+    
+    // Add zoom and pan functionality
+    this.mapStage.on('wheel', (e) => {
+      e.evt.preventDefault();
+      const oldScale = this.mapStage!.scaleX();
+      const pointer = this.mapStage!.getPointerPosition();
+      if (!pointer) return;
+
+      const mousePointTo = {
+        x: (pointer.x - this.mapStage!.x()) / oldScale,
+        y: (pointer.y - this.mapStage!.y()) / oldScale
+      };
+
+      const newScale = e.evt.deltaY > 0 ? oldScale * 0.9 : oldScale * 1.1;
+      const clampedScale = Math.max(0.5, Math.min(3, newScale));
+      this.mapZoomLevel = clampedScale;
+
+      this.mapStage!.scale({ x: clampedScale, y: clampedScale });
+
+      const newPos = {
+        x: pointer.x - mousePointTo.x * clampedScale,
+        y: pointer.y - mousePointTo.y * clampedScale
+      };
+      this.mapStage!.position(newPos);
+      this.mapStagePosition = newPos;
+    });
+
+    // Pan functionality
+    let isDragging = false;
+    let lastPointerPosition: { x: number; y: number } | null = null;
+
+    this.mapStage.on('mousedown', () => {
+      isDragging = true;
+      lastPointerPosition = this.mapStage!.getPointerPosition();
+    });
+
+    this.mapStage.on('mousemove', () => {
+      if (!isDragging || !lastPointerPosition) return;
+      const pointer = this.mapStage!.getPointerPosition();
+      if (!pointer) return;
+
+      const dx = pointer.x - lastPointerPosition.x;
+      const dy = pointer.y - lastPointerPosition.y;
+
+      const newPos = {
+        x: this.mapStage!.x() + dx,
+        y: this.mapStage!.y() + dy
+      };
+      this.mapStage!.position(newPos);
+      this.mapStagePosition = newPos;
+      lastPointerPosition = pointer;
+    });
+
+    this.mapStage.on('mouseup', () => {
+      isDragging = false;
+      lastPointerPosition = null;
+    });
+  }
+
+  loadMapImageToCanvas(): void {
+    if (!this.mapStage || !this.mapImageLayer || !this.mapImageUrl) {
+      return;
+    }
+
+    const imageObj = new Image();
+    imageObj.onload = () => {
+      const stageWidth = this.mapStage!.width();
+      const stageHeight = this.mapStage!.height();
+      const imageAspect = imageObj.width / imageObj.height;
+      const stageAspect = stageWidth / stageHeight;
+
+      let width, height, x, y;
+      if (imageAspect > stageAspect) {
+        width = stageWidth;
+        height = stageWidth / imageAspect;
+        x = 0;
+        y = (stageHeight - height) / 2;
+      } else {
+        width = stageHeight * imageAspect;
+        height = stageHeight;
+        x = (stageWidth - width) / 2;
+        y = 0;
+      }
+
+      const konvaImage = new Konva.Image({
+        x: x,
+        y: y,
+        image: imageObj,
+        width: width,
+        height: height
+      });
+
+      this.mapImageLayer!.destroyChildren();
+      this.mapImageLayer!.add(konvaImage);
+      this.mapImageLayer!.draw();
+
+      // Draw slots after image is loaded
+      if (this.selectedLotId) {
+        this.api.getParkingSlots({ parkingLotId: this.selectedLotId }).subscribe({
+          next: (slots) => {
+            this.drawSlotsOnMap(slots);
+          }
+        });
+      }
+    };
+    imageObj.src = this.mapImageUrl;
+  }
+
+  drawSlotsOnMap(slots: ParkingSlot[]): void {
+    if (!this.mapStage || !this.mapSlotsLayer || !this.mapImageLayer) {
+      return;
+    }
+
+    // Clear existing slots
+    this.mapSlotsLayer.destroyChildren();
+
+    // Get the image bounds to calculate scale
+    const imageNode = this.mapImageLayer.children[0] as Konva.Image;
+    if (!imageNode) return;
+
+    const imageX = imageNode.x();
+    const imageY = imageNode.y();
+    const imageWidth = imageNode.width();
+    const imageHeight = imageNode.height();
+
+    slots.forEach((slot) => {
+      if (!slot.coordinates || slot.coordinates.length === 0) return;
+
+      // Get the first polygon (assuming coordinates format: [[[x1,y1], [x2,y2], ...]]])
+      const polygon = slot.coordinates[0];
+      if (!polygon || polygon.length < 3) return;
+
+      // Convert coordinates to Konva points
+      const points: number[] = [];
+      polygon.forEach((point) => {
+        if (Array.isArray(point) && point.length >= 2) {
+          // Coordinates are relative to image, so add image offset
+          points.push(imageX + point[0], imageY + point[1]);
+        }
+      });
+
+      if (points.length < 6) return; // Need at least 3 points (x,y pairs)
+
+      // Determine color based on status
+      let fillColor = 'rgba(34, 197, 94, 0.3)'; // Green for available
+      let strokeColor = '#22c55e';
+      
+      if (slot.status === 'occupied') {
+        fillColor = 'rgba(239, 68, 68, 0.3)'; // Red for occupied
+        strokeColor = '#ef4444';
+      } else if (slot.status === 'out_of_service') {
+        fillColor = 'rgba(234, 179, 8, 0.3)'; // Yellow for out of service
+        strokeColor = '#eab308';
+      }
+
+      // Create polygon for slot
+      const polygonShape = new Konva.Line({
+        points: points,
+        fill: fillColor,
+        stroke: strokeColor,
+        strokeWidth: 2,
+        closed: true,
+        listening: false
+      });
+
+      // Add slot code label
+      const centerX = points.filter((_, i) => i % 2 === 0).reduce((a, b) => a + b, 0) / (points.length / 2);
+      const centerY = points.filter((_, i) => i % 2 === 1).reduce((a, b) => a + b, 0) / (points.length / 2);
+
+      const label = new Konva.Text({
+        x: centerX - 20,
+        y: centerY - 10,
+        text: slot.slotCode,
+        fontSize: 14,
+        fontFamily: 'Arial',
+        fill: '#111827',
+        fontWeight: 'bold',
+        padding: 4,
+        backgroundColor: 'rgba(255, 255, 255, 0.9)',
+        listening: false
+      });
+
+      if (this.mapSlotsLayer) {
+        this.mapSlotsLayer.add(polygonShape);
+        this.mapSlotsLayer.add(label);
+      }
+    });
+
+    if (this.mapSlotsLayer) {
+      this.mapSlotsLayer.draw();
+    }
+  }
+
+  mapZoomIn(): void {
+    if (!this.mapStage) return;
+    const oldScale = this.mapStage.scaleX();
+    const newScale = Math.min(3, oldScale * 1.2);
+    this.mapZoomLevel = newScale;
+    this.mapStage.scale({ x: newScale, y: newScale });
+    this.mapSlotsLayer?.draw();
+  }
+
+  mapZoomOut(): void {
+    if (!this.mapStage) return;
+    const oldScale = this.mapStage.scaleX();
+    const newScale = Math.max(0.5, oldScale / 1.2);
+    this.mapZoomLevel = newScale;
+    this.mapStage.scale({ x: newScale, y: newScale });
+    this.mapSlotsLayer?.draw();
+  }
+
+  mapResetZoom(): void {
+    if (!this.mapStage) return;
+    this.mapZoomLevel = 1;
+    this.mapStage.scale({ x: 1, y: 1 });
+    this.mapStagePosition = { x: 0, y: 0 };
+    this.mapStage.position({ x: 0, y: 0 });
+    this.mapSlotsLayer?.draw();
+  }
+
+  destroyMapCanvas(): void {
+    if (this.mapStage) {
+      this.mapStage.destroy();
+      this.mapStage = null;
+      this.mapImageLayer = null;
+      this.mapSlotsLayer = null;
+    }
   }
 }

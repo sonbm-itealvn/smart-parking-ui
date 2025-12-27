@@ -39,6 +39,7 @@ export const authInterceptor: HttpInterceptorFn = (request, next) => {
   
   // Get current access token
   const accessToken = authService.accessToken;
+  const refreshToken = authService.refreshToken;
   
   // Add Authorization header for all non-public requests
   let authReq = request;
@@ -47,20 +48,45 @@ export const authInterceptor: HttpInterceptorFn = (request, next) => {
     if (accessToken) {
       // Clone request and add Authorization header
       console.log('[AuthInterceptor] Adding Bearer token to request:', urlPath);
-      console.log('[AuthInterceptor] Token (first 20 chars):', accessToken.substring(0, 20) + '...');
       authReq = request.clone({ 
         setHeaders: { 
           Authorization: `Bearer ${accessToken}` 
         } 
       });
+    } else if (refreshToken) {
+      // No access token but have refresh token - try to refresh first before making request
+      // This prevents unnecessary 401 errors
+      console.log('[AuthInterceptor] No access token but have refresh token, refreshing before request:', urlPath);
+      return authService.refreshTokens().pipe(
+        switchMap((tokens) => {
+          // Retry the original request with new token
+          const retryReq = request.clone({
+            setHeaders: { 
+              Authorization: `Bearer ${tokens.accessToken}` 
+            }
+          });
+          return next(retryReq);
+        }),
+        catchError((refreshError) => {
+          // Only clear auth and redirect if refresh token is actually invalid (401/403)
+          // Don't redirect on network errors or other errors
+          const isAuthError = refreshError instanceof HttpErrorResponse && 
+                             (refreshError.status === 401 || refreshError.status === 403);
+          
+          if (isAuthError) {
+            console.log('[AuthInterceptor] Refresh token is invalid (401/403) before request, clearing auth and redirecting to login');
+            authService.clearAuth();
+            router.navigate(['/login']);
+          } else {
+            console.warn('[AuthInterceptor] Token refresh failed before request with non-auth error, keeping auth state:', refreshError);
+          }
+          return throwError(() => refreshError);
+        })
+      );
     } else {
-      // No token available - this should not happen if user is logged in
+      // No tokens available - this should not happen if user is logged in
       // But we'll let the request go through so server can return proper error
-      console.warn('[AuthInterceptor] No access token for protected endpoint:', urlPath);
-      console.warn('[AuthInterceptor] localStorage check:', {
-        hasAccessToken: !!localStorage.getItem('sp_access_token'),
-        hasRefreshToken: !!localStorage.getItem('sp_refresh_token')
-      });
+      console.warn('[AuthInterceptor] No tokens for protected endpoint:', urlPath);
     }
   } else {
     // Debug: log public path requests
@@ -77,9 +103,11 @@ export const authInterceptor: HttpInterceptorFn = (request, next) => {
       
       // Try to refresh token if we have a refresh token
       if ((isUnauthorized || isForbidden) && authService.refreshToken) {
+        console.log('[AuthInterceptor] Got 401/403, attempting to refresh token...');
         // Try to refresh token and retry the request
         return authService.refreshTokens().pipe(
           switchMap((tokens) => {
+            console.log('[AuthInterceptor] Token refreshed successfully, retrying request');
             // Retry the original request with new token
             const retryReq = request.clone({
               setHeaders: { 
@@ -89,11 +117,18 @@ export const authInterceptor: HttpInterceptorFn = (request, next) => {
             return next(retryReq);
           }),
           catchError((refreshError) => {
-            // If refresh fails, it means refreshToken is also expired or invalid
-            // Only then we clear auth and redirect to login
-            console.log('[AuthInterceptor] Token refresh failed, clearing auth and redirecting to login');
-            authService.clearAuth();
-            router.navigate(['/login']);
+            // Only clear auth and redirect if refresh token is actually invalid (401/403)
+            // Don't redirect on network errors or other errors
+            const isAuthError = refreshError instanceof HttpErrorResponse && 
+                               (refreshError.status === 401 || refreshError.status === 403);
+            
+            if (isAuthError) {
+              console.log('[AuthInterceptor] Refresh token is invalid (401/403), clearing auth and redirecting to login');
+              authService.clearAuth();
+              router.navigate(['/login']);
+            } else {
+              console.warn('[AuthInterceptor] Token refresh failed with non-auth error, keeping auth state:', refreshError);
+            }
             return throwError(() => refreshError);
           })
         );

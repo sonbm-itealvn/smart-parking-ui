@@ -81,6 +81,80 @@
       </div>
     </div>
 
+    <!-- Map Image Section -->
+    <section class="panel map-section" *ngIf="!loading">
+      <div class="map-section__header">
+        <h3 class="map-section__title">Sơ đồ bãi đỗ</h3>
+        <div class="map-section__actions">
+          <label class="btn btn-secondary" [class.btn--loading]="uploadingMapImage">
+            <input type="file" accept="image/*" (change)="onMapImageSelected($event)" style="display: none;" />
+            <svg viewBox="0 0 20 20" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"></path>
+            </svg>
+            Chọn ảnh
+          </label>
+          <button type="button" class="btn btn-primary" [disabled]="!mapImageFile || uploadingMapImage" (click)="uploadMapImage()">
+            <svg viewBox="0 0 20 20" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"></path>
+            </svg>
+            {{ uploadingMapImage ? 'Đang tải...' : 'Đẩy ảnh lên' }}
+          </button>
+        </div>
+      </div>
+      
+      <div class="map-section__body">
+        <div class="map-container" *ngIf="mapImageUrl">
+          <div class="map-controls">
+            <button type="button" class="btn btn-ghost btn-sm" (click)="mapZoomOut()" title="Thu nhỏ">
+              <svg viewBox="0 0 20 20" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2">
+                <circle cx="10" cy="10" r="6"></circle>
+                <line x1="6" y1="10" x2="14" y2="10"></line>
+              </svg>
+            </button>
+            <span class="zoom-level">{{ (mapZoomLevel * 100).toFixed(0) }}%</span>
+            <button type="button" class="btn btn-ghost btn-sm" (click)="mapZoomIn()" title="Phóng to">
+              <svg viewBox="0 0 20 20" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2">
+                <circle cx="10" cy="10" r="6"></circle>
+                <line x1="10" y1="6" x2="10" y2="14"></line>
+                <line x1="6" y1="10" x2="14" y2="10"></line>
+              </svg>
+            </button>
+            <button type="button" class="btn btn-ghost btn-sm" (click)="mapResetZoom()" title="Reset">
+              <svg viewBox="0 0 20 20" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M3 3v5h5M17 17v-5h-5M3 8a5 5 0 0 1 5-5h4M17 12a5 5 0 0 1-5 5h-4"></path>
+              </svg>
+            </button>
+          </div>
+          <div class="map-canvas-wrapper">
+            <div class="map-canvas" #mapCanvasContainer></div>
+            <div class="map-legend">
+              <div class="legend-item">
+                <div class="legend-color legend-color--green"></div>
+                <span>Trống</span>
+              </div>
+              <div class="legend-item">
+                <div class="legend-color legend-color--red"></div>
+                <span>Đang đỗ</span>
+              </div>
+              <div class="legend-item">
+                <div class="legend-color legend-color--yellow"></div>
+                <span>Bảo trì</span>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="map-placeholder" *ngIf="!mapImageUrl">
+          <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2">
+            <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+            <circle cx="8.5" cy="8.5" r="1.5"></circle>
+            <polyline points="21 15 16 10 5 21"></polyline>
+          </svg>
+          <p>Chưa có ảnh sơ đồ bãi đỗ</p>
+          <p class="map-placeholder__hint">Vui lòng chọn và đẩy ảnh lên để xem sơ đồ</p>
+        </div>
+      </div>
+    </section>
+
     <!-- Camera Feeds Section -->
     <div class="camera-panel" *ngIf="!loading">
       <div class="camera-panel__header">

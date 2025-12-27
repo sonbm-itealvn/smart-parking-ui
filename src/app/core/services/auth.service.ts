@@ -172,7 +172,15 @@ export class AuthService {
           this.refreshTokenSubject.error(error);
           this.refreshTokenSubject = null;
         }
-        this.clearAuth();
+        // Only clear auth if refresh token is actually invalid (401/403)
+        // Don't clear on network errors or other errors
+        if (error instanceof HttpErrorResponse && 
+            (error.status === 401 || error.status === 403)) {
+          console.log('[AuthService] Refresh token is invalid (401/403), clearing auth');
+          this.clearAuth();
+        } else {
+          console.warn('[AuthService] Token refresh failed with non-auth error, keeping auth state:', error);
+        }
         return throwError(() => error);
       })
     );
