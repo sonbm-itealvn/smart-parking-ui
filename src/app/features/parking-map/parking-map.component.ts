@@ -96,6 +96,7 @@ export class ParkingMapComponent implements OnInit, AfterViewInit, OnDestroy {
   isEditing = false;
   zoomLevel = 1;
   stagePosition = { x: 0, y: 0 };
+  originalImageDimensions: { width: number; height: number } | null = null; // Kích thước ảnh gốc để tính phần trăm
 
   // Forms
   newLot: Partial<ParkingLot> = {
@@ -901,9 +902,19 @@ export class ParkingMapComponent implements OnInit, AfterViewInit, OnDestroy {
     if (this.selectedLot?.map) {
       this.uploadedImageUrl = this.selectedLot.map;
       this.uploadedImageFile = null; // No file since it's from the parking lot
+      // Set original image dimensions from parking lot
+      if (this.selectedLot.mapWidth && this.selectedLot.mapHeight) {
+        this.originalImageDimensions = {
+          width: this.selectedLot.mapWidth,
+          height: this.selectedLot.mapHeight
+        };
+      } else {
+        this.originalImageDimensions = null;
+      }
     } else {
       this.uploadedImageUrl = null;
       this.uploadedImageFile = null;
+      this.originalImageDimensions = null;
     }
     this.slots = [];
     this.currentSlotIndex = null;
@@ -979,6 +990,12 @@ export class ParkingMapComponent implements OnInit, AfterViewInit, OnDestroy {
 
     const imageObj = new Image();
     imageObj.onload = () => {
+      // Lưu kích thước ảnh gốc để tính phần trăm
+      this.originalImageDimensions = {
+        width: imageObj.naturalWidth,
+        height: imageObj.naturalHeight
+      };
+
       const stageWidth = this.stage!.width();
       const stageHeight = this.stage!.height();
       const imageAspect = imageObj.width / imageObj.height;
@@ -1202,18 +1219,77 @@ export class ParkingMapComponent implements OnInit, AfterViewInit, OnDestroy {
   }
 
   getCoordinatesFromRect(rect: Konva.Rect): number[][][] {
+    if (!this.originalImageDimensions) {
+      // Fallback: nếu không có kích thước gốc, trả về pixel (tương thích ngược)
+      const x = rect.x();
+      const y = rect.y();
+      const width = rect.width();
+      const height = rect.height();
+      return [[
+        [x, y],
+        [x + width, y],
+        [x + width, y + height],
+        [x, y + height],
+        [x, y]
+      ]];
+    }
+
+    // Lấy tọa độ pixel trên canvas
     const x = rect.x();
     const y = rect.y();
     const width = rect.width();
     const height = rect.height();
 
-    // Tạo polygon từ rectangle (4 điểm + đóng)
+    // Lấy kích thước ảnh gốc
+    const originalWidth = this.originalImageDimensions.width;
+    const originalHeight = this.originalImageDimensions.height;
+
+    // Lấy ảnh trên canvas để tính scale
+    const imageNode = this.imageLayer?.children[0] as Konva.Image;
+    if (!imageNode) {
+      // Fallback
+      return [[[x, y], [x + width, y], [x + width, y + height], [x, y + height], [x, y]]];
+    }
+
+    // Tính scale từ canvas về ảnh gốc
+    const canvasImageWidth = imageNode.width();
+    const canvasImageHeight = imageNode.height();
+    const scaleX = originalWidth / canvasImageWidth;
+    const scaleY = originalHeight / canvasImageHeight;
+
+    // Chuyển từ tọa độ canvas về tọa độ ảnh gốc
+    const imageX = imageNode.x();
+    const imageY = imageNode.y();
+    const relativeX = (x - imageX) * scaleX;
+    const relativeY = (y - imageY) * scaleY;
+    const relativeWidth = width * scaleX;
+    const relativeHeight = height * scaleY;
+
+    // Clamp tọa độ về trong bounds của ảnh gốc
+    const clampedX = Math.max(0, Math.min(relativeX, originalWidth));
+    const clampedY = Math.max(0, Math.min(relativeY, originalHeight));
+    const clampedWidth = Math.max(0, Math.min(relativeWidth, originalWidth - clampedX));
+    const clampedHeight = Math.max(0, Math.min(relativeHeight, originalHeight - clampedY));
+
+    // Chuyển sang phần trăm (0-100)
+    const percentX = (clampedX / originalWidth) * 100;
+    const percentY = (clampedY / originalHeight) * 100;
+    const percentWidth = (clampedWidth / originalWidth) * 100;
+    const percentHeight = (clampedHeight / originalHeight) * 100;
+
+    // Đảm bảo giá trị phần trăm hợp lệ (0-100)
+    const finalPercentX = Math.max(0, Math.min(100, percentX));
+    const finalPercentY = Math.max(0, Math.min(100, percentY));
+    const finalPercentWidth = Math.max(0, Math.min(100 - finalPercentX, percentWidth));
+    const finalPercentHeight = Math.max(0, Math.min(100 - finalPercentY, percentHeight));
+
+    // Tạo polygon từ rectangle dưới dạng phần trăm (chỉ 1 polygon)
     return [[
-      [x, y],
-      [x + width, y],
-      [x + width, y + height],
-      [x, y + height],
-      [x, y] // Đóng polygon
+      [finalPercentX, finalPercentY],
+      [finalPercentX + finalPercentWidth, finalPercentY],
+      [finalPercentX + finalPercentWidth, finalPercentY + finalPercentHeight],
+      [finalPercentX, finalPercentY + finalPercentHeight],
+      [finalPercentX, finalPercentY] // Đóng polygon
     ]];
   }
 
@@ -1248,12 +1324,17 @@ export class ParkingMapComponent implements OnInit, AfterViewInit, OnDestroy {
       // Tạo tất cả slots
       const createPromises = this.slots.map(slot => {
         const coordinates = slot.rect ? this.getCoordinatesFromRect(slot.rect) : [];
+        // Đảm bảo coordinates là array hợp lệ và chỉ có 1 polygon
+        const validCoordinates = Array.isArray(coordinates) && coordinates.length > 0 ? coordinates : [];
+        
         const payload = {
           parkingLotId: this.selectedLotId!,
           slotCode: slot.slotCode.trim(),
           status: 'available' as ParkingSlotStatus,
-          coordinates: coordinates
+          coordinates: validCoordinates
         };
+        
+        console.log('Creating slot:', slot.slotCode, 'with coordinates:', validCoordinates);
         return firstValueFrom(this.api.createParkingSlot(payload));
       });
 
@@ -1684,7 +1765,7 @@ export class ParkingMapComponent implements OnInit, AfterViewInit, OnDestroy {
   }
 
   drawSlotsOnMap(slots: ParkingSlot[]): void {
-    if (!this.mapStage || !this.mapSlotsLayer || !this.mapImageLayer) {
+    if (!this.mapStage || !this.mapSlotsLayer || !this.mapImageLayer || !this.selectedLot) {
       return;
     }
 
@@ -1697,8 +1778,23 @@ export class ParkingMapComponent implements OnInit, AfterViewInit, OnDestroy {
 
     const imageX = imageNode.x();
     const imageY = imageNode.y();
-    const imageWidth = imageNode.width();
-    const imageHeight = imageNode.height();
+    const canvasImageWidth = imageNode.width();
+    const canvasImageHeight = imageNode.height();
+
+    // Lấy kích thước ảnh gốc từ parking lot hoặc từ ảnh
+    const imageSource = imageNode.image();
+    let originalWidth = this.selectedLot.mapWidth || canvasImageWidth;
+    let originalHeight = this.selectedLot.mapHeight || canvasImageHeight;
+    
+    // Nếu không có trong parking lot, lấy từ image element
+    if (!this.selectedLot.mapWidth && imageSource instanceof HTMLImageElement) {
+      originalWidth = imageSource.naturalWidth || canvasImageWidth;
+      originalHeight = imageSource.naturalHeight || canvasImageHeight;
+    }
+
+    // Tính scale từ ảnh gốc về canvas hiện tại
+    const scaleX = canvasImageWidth / originalWidth;
+    const scaleY = canvasImageHeight / originalHeight;
 
     slots.forEach((slot) => {
       if (!slot.coordinates || slot.coordinates.length === 0) return;
@@ -1707,12 +1803,23 @@ export class ParkingMapComponent implements OnInit, AfterViewInit, OnDestroy {
       const polygon = slot.coordinates[0];
       if (!polygon || polygon.length < 3) return;
 
-      // Convert coordinates to Konva points
+      // Convert coordinates from percentage to pixel based on current image size
       const points: number[] = [];
       polygon.forEach((point) => {
         if (Array.isArray(point) && point.length >= 2) {
-          // Coordinates are relative to image, so add image offset
-          points.push(imageX + point[0], imageY + point[1]);
+          // Coordinates are stored as percentage (0-100)
+          const percentX = point[0];
+          const percentY = point[1];
+          
+          // Convert percentage to pixel on original image
+          const pixelX = (percentX / 100) * originalWidth;
+          const pixelY = (percentY / 100) * originalHeight;
+          
+          // Scale to current canvas size and add image offset
+          const canvasX = pixelX * scaleX + imageX;
+          const canvasY = pixelY * scaleY + imageY;
+          
+          points.push(canvasX, canvasY);
         }
       });
 
