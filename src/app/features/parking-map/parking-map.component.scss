@@ -974,6 +974,32 @@
   margin: 0;
 }
 
+.camera-modal__error {
+  position: absolute;
+  top: 24px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 20px;
+  background: #fee2e2;
+  border: 1px solid #fecaca;
+  border-radius: 8px;
+  color: #dc2626;
+  font-size: 0.875rem;
+  z-index: 20;
+  width: calc(100% - 48px);
+  max-width: 500px;
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+}
+
+.camera-modal__error svg {
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+}
+
 .camera-modal__process {
   position: absolute;
   bottom: 24px;

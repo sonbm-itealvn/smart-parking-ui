@@ -507,6 +507,15 @@
         <p class="offline-message">Không thể kết nối đến camera. Vui lòng thử lại sau.</p>
       </div>
 
+      <!-- Error message -->
+      <div class="camera-modal__error" *ngIf="error && selectedCameraId === camera.id">
+        <svg viewBox="0 0 20 20" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="10" cy="10" r="8"></circle>
+          <path d="M10 6v4M10 14h.01" stroke-linecap="round"></path>
+        </svg>
+        <span>{{ error }}</span>
+      </div>
+
       <!-- Process button -->
       <div class="camera-modal__process" *ngIf="!camera.loading && (camera.status === 'active' || camera.stream)">
         <button

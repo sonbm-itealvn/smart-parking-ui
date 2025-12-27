@@ -1,7 +1,7 @@
 ﻿import { CommonModule } from '@angular/common';
 import { Component, OnInit, inject, ViewChild, ElementRef, AfterViewInit, OnDestroy } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { finalize, forkJoin, firstValueFrom } from 'rxjs';
+import { finalize, forkJoin, firstValueFrom, catchError, of } from 'rxjs';
 import Konva from 'konva';
 import { ApiClientService } from '../../core/services/api-client.service';
 import { ParkingSession, ParkingSlot, ParkingSlotStatus, ParkingLot, Vehicle, ProcessVehicleResponse, Camera } from '../../core/models/api.models';
@@ -336,49 +336,435 @@ export class ParkingMapComponent implements OnInit, AfterViewInit, OnDestroy {
     this.selectedCameraId = null;
   }
 
-  processVehicle(cameraId: number): void {
+  async processVehicle(cameraId: number): Promise<void> {
     const camera = this.cameras.find(c => c.id === cameraId);
-    if (!camera) return;
+    if (!camera) {
+      this.error = 'Không tìm thấy camera';
+      return;
+    }
 
     camera.loading = true;
     camera.status = 'active';
+    this.error = null;
 
-    this.api.processVehicleFromCamera(cameraId, {
-      parkingLotId: this.selectedLotId || undefined
-    }).subscribe({
-      next: (response) => {
-        camera.loading = false;
-        camera.lastResult = response;
-        
-        // Reload slots after processing
-        if (this.selectedLotId) {
-          this.loadSlotsForLot(this.selectedLotId);
-        }
+    // Use camera's parkingLotId if available, otherwise use selectedLotId
+    const parkingLotId = camera.parkingLotId || this.selectedLotId || undefined;
 
-        // Show success message
-        const isEntry = response.message.toLowerCase().includes('entry') || 
-                       response.message.toLowerCase().includes('vào');
-        const isExit = response.message.toLowerCase().includes('exit') || 
-                      response.message.toLowerCase().includes('ra');
-        
-        if (isEntry) {
-          console.log('✅ Xe đã VÀO:', response);
-        } else if (isExit) {
-          console.log('✅ Xe đã RA:', response);
+    // For webcam, capture frame from video stream and send to backend
+    if (camera.cameraType === 'webcam' && camera.stream) {
+      try {
+        // Capture frame from video element
+        const videoElement = document.querySelector(`video[srcObject]`) as HTMLVideoElement;
+        if (!videoElement) {
+          // Try to find video element in modal
+          const modalVideo = document.querySelector('.camera-modal__video') as HTMLVideoElement;
+          if (modalVideo && modalVideo.srcObject === camera.stream) {
+            const frameBlob = await this.captureFrameFromVideo(modalVideo);
+            if (frameBlob) {
+              // Upload frame and process
+              await this.processVehicleWithImage(cameraId, frameBlob, parkingLotId, camera);
+              return;
+            }
+          }
+          throw new Error('Không tìm thấy video element để capture frame');
+        } else {
+          const frameBlob = await this.captureFrameFromVideo(videoElement);
+          if (frameBlob) {
+            await this.processVehicleWithImage(cameraId, frameBlob, parkingLotId, camera);
+            return;
+          }
         }
-      },
-      error: (err) => {
-        console.error('Error processing vehicle:', err);
+      } catch (err: any) {
+        console.error('Error capturing frame from webcam:', err);
         camera.loading = false;
-        // Don't change status to offline on error, keep it as active if stream is working
-        if (!camera.stream && camera.cameraType === 'webcam') {
-          camera.status = 'offline';
-        }
-        
-        // Show error message
-        const errorMessage = err?.error?.error || err?.error?.message || 'Có lỗi xảy ra khi xử lý xe';
-        console.error('Camera error:', errorMessage);
+        this.error = err.message || 'Không thể capture frame từ webcam';
+        alert(`Lỗi: ${this.error}`);
+        return;
       }
+    }
+
+    // For non-webcam cameras, use normal API call
+    // Backend will automatically:
+    // 1. Detect license plate from camera frame
+    // 2. Find available slot based on camera's parkingLotId
+    // 3. Assign vehicle to that slot
+    // So we don't need to send anything, backend knows everything from camera context
+    this.api.processVehicleFromCamera(cameraId, {})
+      .subscribe({
+        next: (response) => {
+          camera.loading = false;
+          camera.lastResult = response;
+          
+          // Reload slots after processing
+          if (this.selectedLotId) {
+            this.loadSlotsForLot(this.selectedLotId);
+          }
+
+          // Show success message
+          const isEntry = response.message.toLowerCase().includes('entry') || 
+                         response.message.toLowerCase().includes('vào');
+          const isExit = response.message.toLowerCase().includes('exit') || 
+                        response.message.toLowerCase().includes('ra');
+          
+          if (isEntry) {
+            console.log('✅ Xe đã VÀO:', response);
+          } else if (isExit) {
+            console.log('✅ Xe đã RA:', response);
+          }
+        },
+        error: (err) => {
+          this.handleProcessVehicleError(err, camera);
+          
+          // Don't change status to offline on error, keep it as active if stream is working
+          if (!camera.stream && camera.cameraType === 'webcam') {
+            camera.status = 'offline';
+          }
+        }
+      });
+  }
+
+  private async captureFrameFromVideo(video: HTMLVideoElement): Promise<Blob | null> {
+    return new Promise((resolve) => {
+      // Wait for video to be ready (readyState 2 = HAVE_CURRENT_DATA, 3 = HAVE_FUTURE_DATA, 4 = HAVE_ENOUGH_DATA)
+      if (video.readyState < 2) {
+        const onLoadedData = () => {
+          video.removeEventListener('loadeddata', onLoadedData);
+          this.captureFrameFromVideo(video).then(resolve);
+        };
+        video.addEventListener('loadeddata', onLoadedData);
+        return;
+      }
+
+      const canvas = document.createElement('canvas');
+      // Increase max size to maintain better quality for license plate detection
+      const maxWidth = 1920; // Increased for better quality
+      const maxHeight = 1080; // Increased for better quality
+      
+      let width = video.videoWidth || video.clientWidth;
+      let height = video.videoHeight || video.clientHeight;
+      
+      // Ensure we have valid dimensions
+      if (!width || !height || width === 0 || height === 0) {
+        // Fallback to video element dimensions
+        width = video.clientWidth || 640;
+        height = video.clientHeight || 480;
+      }
+      
+      // Ensure minimum size for license plate detection
+      if (width < 640) width = 640;
+      if (height < 480) height = 480;
+      
+      // Calculate aspect ratio and resize if needed
+      if (width > maxWidth || height > maxHeight) {
+        const aspectRatio = width / height;
+        if (width > height) {
+          width = maxWidth;
+          height = width / aspectRatio;
+        } else {
+          height = maxHeight;
+          width = height * aspectRatio;
+        }
+      }
+      
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext('2d');
+      
+      if (!ctx) {
+        resolve(null);
+        return;
+      }
+
+      // Use better image smoothing for license plate detection
+      ctx.imageSmoothingEnabled = true;
+      ctx.imageSmoothingQuality = 'high';
+      
+      ctx.drawImage(video, 0, 0, width, height);
+      
+      // Use higher quality (0.85) to ensure license plate is readable
+      canvas.toBlob((blob) => {
+        resolve(blob);
+      }, 'image/jpeg', 0.85);
+    });
+  }
+
+  private async processVehicleWithImage(
+    cameraId: number, 
+    imageBlob: Blob, 
+    parkingLotId: number | undefined,
+    camera: CameraFeed
+  ): Promise<void> {
+    try {
+      // Check image size - if too large, compress further
+      // Increased max size to 800KB to maintain better quality for license plate detection
+      const maxSize = 800 * 1024; // 800KB max (increased from 500KB)
+      let finalBlob = imageBlob;
+      
+      if (imageBlob.size > maxSize) {
+        // Compress image further, but try to maintain quality
+        finalBlob = await this.compressImage(imageBlob, maxSize);
+      }
+      
+      // Upload image to server first (for AI module to read from URL)
+      const imageFile = new File([finalBlob], `camera-${cameraId}-${Date.now()}.jpg`, { type: 'image/jpeg' });
+      
+      console.log('📤 Uploading image to server...');
+      const uploadResult = await firstValueFrom(
+        this.api.uploadImage(imageFile, parkingLotId).pipe(
+          catchError((err) => {
+            console.error('Error uploading image:', err);
+            camera.loading = false;
+            this.error = 'Không thể upload ảnh lên server. Vui lòng thử lại.';
+            alert('Lỗi: Không thể upload ảnh lên server. Vui lòng thử lại.');
+            throw err;
+          })
+        )
+      );
+      
+      console.log('✅ Image uploaded, full response:', uploadResult);
+      
+      // Get URL from response - URL is in image.url
+      const imageUrl = uploadResult?.image?.url;
+      
+      if (!imageUrl) {
+        console.error('❌ No URL in upload response:', uploadResult);
+        camera.loading = false;
+        this.error = 'Upload ảnh thành công nhưng không nhận được URL. Vui lòng thử lại.';
+        alert('Lỗi: Upload ảnh thành công nhưng không nhận được URL. Vui lòng thử lại.');
+        return;
+      }
+      
+      console.log('✅ Image URL:', imageUrl);
+      
+      // Backend will automatically:
+      // 1. Detect license plate from imageUrl
+      // 2. Find available slot based on camera's parkingLotId
+      // 3. Assign vehicle to that slot
+      // So we only need to send imageUrl, backend knows everything else from camera context
+      const options: { imageUrl: string } = {
+        imageUrl: imageUrl
+      };
+
+      console.log('📤 Calling process-vehicle with imageUrl only');
+      this.api.processVehicleFromCamera(cameraId, options)
+        .subscribe({
+          next: (response) => {
+            camera.loading = false;
+            camera.lastResult = response;
+            
+            // Reload slots after processing
+            if (this.selectedLotId) {
+              this.loadSlotsForLot(this.selectedLotId);
+            }
+
+            // Show success message
+            const isEntry = response.message.toLowerCase().includes('entry') || 
+                           response.message.toLowerCase().includes('vào');
+            const isExit = response.message.toLowerCase().includes('exit') || 
+                          response.message.toLowerCase().includes('ra');
+            
+            if (isEntry) {
+              console.log('✅ Xe đã VÀO:', response);
+            } else if (isExit) {
+              console.log('✅ Xe đã RA:', response);
+            }
+          },
+          error: (err) => {
+            this.handleProcessVehicleError(err, camera);
+          }
+        });
+
+      // Alternative approach: Upload image and use URL (if backend supports)
+      // This is commented out because backend may not support image URL in process-vehicle
+      /*
+      const imageFile = new File([imageBlob], `camera-${cameraId}-${Date.now()}.jpg`, { type: 'image/jpeg' });
+      const uploadResult = await firstValueFrom(this.api.uploadImage(imageFile, parkingLotId));
+      
+      // Try to use the uploaded image URL (if backend supports it)
+      const options: { parkingLotId?: number; imageUrl?: string } = {};
+      if (parkingLotId) {
+        options.parkingLotId = parkingLotId;
+      }
+      options.imageUrl = uploadResult.url;
+
+      this.api.processVehicleFromCamera(cameraId, options as any)
+        .subscribe({
+          next: (response) => {
+            camera.loading = false;
+            camera.lastResult = response;
+            
+            if (this.selectedLotId) {
+              this.loadSlotsForLot(this.selectedLotId);
+            }
+
+            const isEntry = response.message.toLowerCase().includes('entry') || 
+                           response.message.toLowerCase().includes('vào');
+            const isExit = response.message.toLowerCase().includes('exit') || 
+                          response.message.toLowerCase().includes('ra');
+            
+            if (isEntry) {
+              console.log('✅ Xe đã VÀO:', response);
+            } else if (isExit) {
+              console.log('✅ Xe đã RA:', response);
+            }
+          },
+          error: (err) => {
+            this.handleProcessVehicleError(err, camera);
+          }
+        });
+      */
+    } catch (err: any) {
+      console.error('Error processing vehicle with image:', err);
+      camera.loading = false;
+      this.error = err?.message || 'Có lỗi xảy ra khi xử lý ảnh';
+      alert(`Lỗi: ${this.error}`);
+    }
+  }
+
+  private handleProcessVehicleError(err: any, camera: CameraFeed): void {
+    console.error('Error processing vehicle:', err);
+    camera.loading = false;
+    camera.lastResult = undefined;
+    
+    // Handle specific HTTP status codes
+    let errorMessage = 'Có lỗi xảy ra khi xử lý xe';
+    
+    if (err?.status === 413) {
+      errorMessage = 'Ảnh quá lớn. Vui lòng thử lại hoặc cấu hình snapshot URL cho camera webcam.';
+    } else if (err?.status === 400) {
+      const backendError = err?.error?.error || err?.error?.message || '';
+      
+      // Check for specific license plate detection errors
+      if (backendError.toLowerCase().includes('could not detect license plate') || 
+          backendError.toLowerCase().includes('không thể nhận diện biển số')) {
+        errorMessage = 'Không thể nhận diện biển số xe. Vui lòng:\n' +
+          '1. Đảm bảo biển số xe rõ ràng và nằm trong khung hình\n' +
+          '2. Đảm bảo đủ ánh sáng\n' +
+          '3. Thử lại sau vài giây\n' +
+          '4. Hoặc sử dụng camera HTTP/RTSP với snapshot URL';
+      } else {
+        errorMessage = backendError || 'Yêu cầu không hợp lệ. Vui lòng kiểm tra cấu hình camera.';
+      }
+    } else if (err?.status === 404) {
+      errorMessage = 'Không tìm thấy camera hoặc endpoint.';
+    } else if (err?.status === 500) {
+      errorMessage = 'Lỗi server. Vui lòng thử lại sau.';
+    } else if (err?.error) {
+      // Check if error is a string (HTML response)
+      if (typeof err.error === 'string') {
+        // Try to extract error from HTML or use generic message
+        if (err.error.includes('<!DOCTYPE') || err.error.includes('<html')) {
+          errorMessage = 'Backend trả về lỗi. Vui lòng kiểm tra cấu hình camera hoặc liên hệ admin.';
+        } else {
+          errorMessage = err.error;
+        }
+      } else if (err.error.error) {
+        errorMessage = err.error.error;
+      } else if (err.error.message) {
+        errorMessage = err.error.message;
+      }
+    } else if (err?.message) {
+      errorMessage = err.message;
+    }
+    
+    this.error = errorMessage;
+    console.error('Camera error:', errorMessage, err);
+    alert(`Lỗi: ${errorMessage}`);
+  }
+
+  private blobToBase64(blob: Blob): Promise<string> {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        const base64String = reader.result as string;
+        // Remove data:image/jpeg;base64, prefix if present
+        const base64 = base64String.includes(',') ? base64String.split(',')[1] : base64String;
+        resolve(base64);
+      };
+      reader.onerror = reject;
+      reader.readAsDataURL(blob);
+    });
+  }
+
+  private async compressImage(blob: Blob, maxSize: number): Promise<Blob> {
+    return new Promise((resolve) => {
+      const img = new Image();
+      const url = URL.createObjectURL(blob);
+      
+      img.onload = () => {
+        URL.revokeObjectURL(url);
+        
+        const canvas = document.createElement('canvas');
+        let width = img.width;
+        let height = img.height;
+        let quality = 0.6;
+        let attempts = 0;
+        const maxAttempts = 10;
+        
+        const tryCompress = (): void => {
+          attempts++;
+          
+          if (attempts > maxAttempts) {
+            // If we've tried too many times, just return the smallest we can get
+            canvas.width = Math.floor(width * 0.5);
+            canvas.height = Math.floor(height * 0.5);
+            const ctx = canvas.getContext('2d');
+            if (ctx) {
+              ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+              canvas.toBlob((finalBlob) => {
+                resolve(finalBlob || blob);
+              }, 'image/jpeg', 0.4);
+            } else {
+              resolve(blob);
+            }
+            return;
+          }
+          
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext('2d');
+          
+          if (!ctx) {
+            resolve(blob);
+            return;
+          }
+          
+          ctx.drawImage(img, 0, 0, width, height);
+          
+          canvas.toBlob((compressedBlob) => {
+            if (!compressedBlob) {
+              resolve(blob);
+              return;
+            }
+            
+            if (compressedBlob.size <= maxSize || (quality <= 0.1 && width < 200)) {
+              resolve(compressedBlob);
+            } else {
+              // Reduce quality first
+              if (quality > 0.2) {
+                quality -= 0.1;
+              } else {
+                // Then reduce size
+                width = Math.floor(width * 0.85);
+                height = Math.floor(height * 0.85);
+                quality = 0.6; // Reset quality when resizing
+              }
+              
+              // Try again with new settings
+              tryCompress();
+            }
+          }, 'image/jpeg', quality);
+        };
+        
+        tryCompress();
+      };
+      
+      img.onerror = () => {
+        URL.revokeObjectURL(url);
+        resolve(blob); // Return original if compression fails
+      };
+      
+      img.src = url;
     });
   }
 

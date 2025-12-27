@@ -1,4 +1,4 @@
-import { HttpClient, HttpParams } from '@angular/common/http';
+import { HttpClient, HttpParams, HttpResponse } from '@angular/common/http';
 import { Injectable, inject } from '@angular/core';
 import { environment } from '../../../environments/environment';
 import {
@@ -105,7 +105,20 @@ export class ApiClientService {
     if (parkingLotId) {
       formData.append('parkingLotId', parkingLotId.toString());
     }
-    return this.http.post<{ url: string; message: string }>(`${this.baseUrl}/api/upload-images`, formData);
+    return this.http.post<{ 
+      message: string; 
+      image: { 
+        url: string; 
+        filename: string; 
+        originalName: string; 
+        mimetype: string; 
+        size: number; 
+        path: string; 
+        id: string; 
+        createdAt: string; 
+        updatedAt: string; 
+      } 
+    }>(`${this.baseUrl}/api/upload-images`, formData);
   }
 
   updateParkingSlot(id: number, payload: Partial<ParkingSlot>) {
@@ -165,15 +178,42 @@ export class ApiClientService {
     return this.http.get<LicensePlateLog[]>(`${this.baseUrl}/api/license-plate/logs`);
   }
 
+  // Detect license plate from image
+  detectLicensePlateFromImage(file: File) {
+    const formData = new FormData();
+    // API expects 'image' as the key, not 'file'
+    formData.append('image', file);
+    // Return observable with response that includes license plate in header
+    return this.http.post<Blob>(
+      `${this.baseUrl}/api/license-plate/detect`,
+      formData,
+      {
+        observe: 'response',
+        responseType: 'blob' as 'json'
+      }
+    ) as any; // Type assertion needed because responseType 'blob' conflicts with generic
+  }
+
   // Camera detection endpoints
-  processVehicleFromCamera(cameraId: number, options?: { parkingLotId?: number; slotId?: number }) {
+  processVehicleFromCamera(cameraId: number, options?: { parkingLotId?: number; slotId?: number; imageBase64?: string; imageUrl?: string }) {
     const body: any = {};
-    if (options?.parkingLotId) body.parkingLotId = options.parkingLotId;
-    if (options?.slotId) body.slotId = options.slotId;
+    if (options?.parkingLotId) {
+      body.parkingLotId = options.parkingLotId;
+    }
+    if (options?.slotId) {
+      body.slotId = options.slotId;
+    }
+    if (options?.imageBase64) {
+      body.imageBase64 = options.imageBase64;
+    }
+    if (options?.imageUrl) {
+      body.imageUrl = options.imageUrl;
+    }
     
+    // API accepts empty body, so always send body (even if empty)
     return this.http.post<ProcessVehicleResponse>(
       `${this.baseUrl}/api/cameras/${cameraId}/process-vehicle`,
-      Object.keys(body).length > 0 ? body : {}
+      body
     );
   }
 
