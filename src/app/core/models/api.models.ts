@@ -207,3 +207,34 @@ export interface ProcessVehicleResponse {
   note?: string;
 }
 
+// Current Occupant Response
+export interface CurrentOccupantResponse {
+  parkingSlot: {
+    id: number;
+    slotCode: string;
+    status: string;
+  };
+  isOccupied: boolean;
+  currentOccupant?: {
+    session: {
+      id: number;
+      entryTime: string;
+      licensePlate?: string;
+      exitTime?: string | null;
+      fee?: number;
+      status?: ParkingSessionStatus;
+    };
+    vehicle?: {
+      id: number;
+      licensePlate: string;
+      vehicleType: VehicleType;
+      userId?: number;
+    };
+    user?: {
+      id: number;
+      fullName: string;
+      email: string;
+    };
+  };
+}
+

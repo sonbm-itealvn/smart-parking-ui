@@ -4,6 +4,7 @@ import { environment } from '../../../environments/environment';
 import {
   AuthResponse,
   Camera,
+  CurrentOccupantResponse,
   DailyRevenueResponse,
   ExitSessionResponse,
   LicensePlateLog,
@@ -89,6 +90,10 @@ export class ApiClientService {
     return this.http.put<ParkingLot>(`${this.baseUrl}/api/parking-lots/${id}`, payload);
   }
 
+  deleteParkingLot(id: number) {
+    return this.http.delete<{ message: string }>(`${this.baseUrl}/api/parking-lots/${id}`);
+  }
+
   // Parking Slots
   getParkingSlots(params?: { parkingLotId?: number }) {
     let httpParams = new HttpParams();
@@ -100,6 +105,18 @@ export class ApiClientService {
 
   createParkingSlot(payload: Partial<ParkingSlot>) {
     return this.http.post<ParkingSlot>(`${this.baseUrl}/api/parking-slots`, payload);
+  }
+
+  updateParkingSlot(id: number, payload: Partial<ParkingSlot>) {
+    return this.http.put<ParkingSlot>(`${this.baseUrl}/api/parking-slots/${id}`, payload);
+  }
+
+  deleteParkingSlot(id: number) {
+    return this.http.delete<{ message: string }>(`${this.baseUrl}/api/parking-slots/${id}`);
+  }
+
+  getParkingSlotCurrentOccupant(id: number) {
+    return this.http.get<CurrentOccupantResponse>(`${this.baseUrl}/api/parking-slots/${id}/current-occupant`);
   }
 
   // Upload Images
@@ -123,10 +140,6 @@ export class ApiClientService {
         updatedAt: string; 
       } 
     }>(`${this.baseUrl}/api/upload-images`, formData);
-  }
-
-  updateParkingSlot(id: number, payload: Partial<ParkingSlot>) {
-    return this.http.put<ParkingSlot>(`${this.baseUrl}/api/parking-slots/${id}`, payload);
   }
 
   // Vehicles

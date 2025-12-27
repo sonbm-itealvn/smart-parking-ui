@@ -50,6 +50,17 @@
       </div>
       <div class="lot-card__footer">
         <button type="button" class="lot-card__button">Xem chi tiết</button>
+        <button 
+          type="button" 
+          class="lot-card__button lot-card__button--delete" 
+          (click)="handleDeleteLot(lot, $event)"
+          title="Xóa bãi đỗ"
+        >
+          <svg viewBox="0 0 20 20" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M5 5l10 10M15 5L5 15"></path>
+          </svg>
+          Xóa
+        </button>
       </div>
     </div>
     <div class="lots-grid__empty" *ngIf="parkingLots.length === 0">
@@ -271,6 +282,8 @@
           [class.spot-card--available]="spot.status === 'available'"
           [class.spot-card--occupied]="spot.status === 'occupied'"
           [class.spot-card--out-of-service]="spot.status === 'out_of_service'"
+          [class.spot-card--clickable]="spot.status === 'occupied'"
+          (click)="spot.status === 'occupied' ? showSpotDetail(spot) : null"
         >
           <div class="spot-card__icon">
             <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2">
@@ -300,8 +313,24 @@
                 <span class="spot-card__time">{{ spot.time }}</span>
               </div>
             </div>
-            <div class="spot-card__empty" *ngIf="!spot.vehicle">
+            <div class="spot-card__empty" *ngIf="spot.status === 'available' && !spot.vehicle">
               <p>Chưa có xe đỗ</p>
+            </div>
+            <div class="spot-card__footer" *ngIf="spot.status === 'occupied'">
+              <p class="spot-card__hint">Click để xem chi tiết</p>
+            </div>
+            <div class="spot-card__footer" *ngIf="spot.status !== 'occupied'">
+              <button 
+                type="button" 
+                class="spot-card__delete-btn" 
+                (click)="handleDeleteSpot(spot, $event)"
+                title="Xóa vị trí đỗ"
+              >
+                <svg viewBox="0 0 20 20" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M5 5l10 10M15 5L5 15"></path>
+                </svg>
+                Xóa
+              </button>
             </div>
           </div>
         </div>
@@ -703,5 +732,54 @@
         </div>
       </div>
     </div>
+  </div>
+</div>
+
+<!-- Spot Detail Modal -->
+<div class="modal" *ngIf="showSpotDetailModal && selectedSpot">
+  <div class="modal__backdrop" (click)="closeSpotDetailModal()"></div>
+  <div class="modal__content">
+    <header>
+      <h3>Thông tin xe đỗ</h3>
+      <button type="button" (click)="closeSpotDetailModal()">×</button>
+    </header>
+    <div class="modal__body">
+      <div class="spot-detail">
+        <div class="spot-detail__item">
+          <span class="spot-detail__label">Vị trí đỗ:</span>
+          <span class="spot-detail__value">{{ selectedSpot.id }}</span>
+        </div>
+        <div class="spot-detail__item" *ngIf="selectedSpot.vehicle || selectedSpot.session?.licensePlate">
+          <span class="spot-detail__label">Biển số xe:</span>
+          <span class="spot-detail__value spot-detail__value--highlight">{{ selectedSpot.vehicle || selectedSpot.session?.licensePlate }}</span>
+        </div>
+        <div class="spot-detail__item" *ngIf="selectedSpot.vehicleInfo">
+          <span class="spot-detail__label">Loại xe:</span>
+          <span class="spot-detail__value">{{ selectedSpot.vehicleInfo.vehicleType === 'car' ? 'Ô tô' : selectedSpot.vehicleInfo.vehicleType === 'motorcycle' ? 'Xe máy' : 'Xe tải' }}</span>
+        </div>
+        <div class="spot-detail__item" *ngIf="selectedSpot.userInfo">
+          <span class="spot-detail__label">Chủ xe:</span>
+          <span class="spot-detail__value">{{ selectedSpot.userInfo.fullName }}</span>
+        </div>
+        <div class="spot-detail__item" *ngIf="selectedSpot.userInfo">
+          <span class="spot-detail__label">Email:</span>
+          <span class="spot-detail__value">{{ selectedSpot.userInfo.email }}</span>
+        </div>
+        <div class="spot-detail__item" *ngIf="!selectedSpot.userInfo && (selectedSpot.session?.vehicleId === null || !selectedSpot.vehicleInfo?.userId)">
+          <span class="spot-detail__badge spot-detail__badge--guest">Xe vãng lai</span>
+        </div>
+        <div class="spot-detail__item" *ngIf="selectedSpot.session?.entryTime">
+          <span class="spot-detail__label">Giờ vào:</span>
+          <span class="spot-detail__value">{{ selectedSpot.session?.entryTime | date: 'HH:mm:ss dd/MM/yyyy' }}</span>
+        </div>
+        <div class="spot-detail__item" *ngIf="selectedSpot.session?.fee !== undefined && selectedSpot.session?.fee !== null">
+          <span class="spot-detail__label">Phí dự kiến:</span>
+          <span class="spot-detail__value spot-detail__value--fee">{{ selectedSpot.session?.fee | number }} VNĐ</span>
+        </div>
+      </div>
+    </div>
+    <footer>
+      <button type="button" class="btn btn-primary" (click)="closeSpotDetailModal()">Đóng</button>
+    </footer>
   </div>
 </div>

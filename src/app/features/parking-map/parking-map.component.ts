@@ -4,16 +4,20 @@ import { FormsModule } from '@angular/forms';
 import { finalize, forkJoin, firstValueFrom, catchError, of, throwError } from 'rxjs';
 import Konva from 'konva';
 import { ApiClientService } from '../../core/services/api-client.service';
-import { ParkingSession, ParkingSlot, ParkingSlotStatus, ParkingLot, Vehicle, ProcessVehicleResponse, Camera } from '../../core/models/api.models';
+import { ParkingSession, ParkingSlot, ParkingSlotStatus, ParkingLot, Vehicle, ProcessVehicleResponse, Camera, User, ParkingLotVehiclesResponse, CurrentOccupantResponse } from '../../core/models/api.models';
 
 type SpotStatus = ParkingSlotStatus;
 
 interface ParkingSpot {
   id: string;
+  slotId?: number; // ID thực tế của slot trong database
   status: SpotStatus;
   vehicle?: string;
   time?: string;
   parkingLotId?: number;
+  session?: ParkingSession; // Thông tin session để hiển thị chi tiết
+  vehicleInfo?: Vehicle; // Thông tin đầy đủ về xe
+  userInfo?: User; // Thông tin chủ xe (nếu có)
 }
 
 interface CameraFeed {
@@ -85,6 +89,8 @@ export class ParkingMapComponent implements OnInit, AfterViewInit, OnDestroy {
   showAddLotModal = false;
   showAddSlotModal = false;
   showSlotEditorModal = false;
+  showSpotDetailModal = false;
+  selectedSpot: ParkingSpot | null = null;
   submitting = false;
   
   // Slot Editor
@@ -356,12 +362,13 @@ export class ParkingMapComponent implements OnInit, AfterViewInit, OnDestroy {
     forkJoin({
       slots: this.api.getParkingSlots({ parkingLotId: lotId }),
       sessions: this.api.getParkingSessions(),
-      vehicles: this.api.getVehicles()
+      vehicles: this.api.getVehicles(),
+      users: this.api.getUsers().pipe(catchError(() => of([]))) // Load users, fallback to empty array if error
     })
       .pipe(finalize(() => (this.loading = false)))
       .subscribe({
-        next: ({ slots, sessions, vehicles }) => {
-          this.spots = this.hydrateSlots(slots, sessions, vehicles);
+        next: ({ slots, sessions, vehicles, users }) => {
+          this.spots = this.hydrateSlots(slots, sessions, vehicles, users);
           // Draw slots on map if map image is loaded
           if (this.mapImageUrl && this.mapStage) {
             this.drawSlotsOnMap(slots);
@@ -1500,6 +1507,120 @@ export class ParkingMapComponent implements OnInit, AfterViewInit, OnDestroy {
       });
   }
 
+  handleDeleteLot(lot: ParkingLot, event: Event): void {
+    event.stopPropagation(); // Ngăn chặn click event bubble lên lot-card
+    if (!confirm(`Bạn có chắc chắn muốn xóa bãi đỗ "${lot.name}"? Hành động này không thể hoàn tác.`)) {
+      return;
+    }
+
+    this.api
+      .deleteParkingLot(lot.id)
+      .subscribe({
+        next: () => {
+          // Nếu đang xem bãi đỗ này, quay về danh sách
+          if (this.selectedLotId === lot.id) {
+            this.backToList();
+          }
+          this.loadParkingLots();
+        },
+        error: (err) => {
+          const errorMessage = err?.error?.error || err?.error?.message || err?.message;
+          if (errorMessage?.includes('permission') || errorMessage?.includes('Access denied')) {
+            this.error = 'Bạn không có quyền thực hiện thao tác này. Chức năng này chỉ dành cho quản trị viên.';
+          } else {
+            this.error = errorMessage || 'Không thể xóa bãi đỗ. Vui lòng thử lại.';
+          }
+        }
+      });
+  }
+
+  showSpotDetail(spot: ParkingSpot): void {
+    // Set initial spot data
+    this.selectedSpot = spot;
+    this.showSpotDetailModal = true;
+
+    // Load detailed information from API
+    if (spot.slotId) {
+      this.loading = true;
+      this.api.getParkingSlotCurrentOccupant(spot.slotId).subscribe({
+        next: (response) => {
+          if (response.isOccupied && response.currentOccupant && this.selectedSpot) {
+            const occupant = response.currentOccupant;
+            
+            // Update selectedSpot with detailed information from API
+            this.selectedSpot = {
+              ...this.selectedSpot,
+              vehicle: occupant.vehicle?.licensePlate || occupant.session.licensePlate,
+              session: {
+                id: occupant.session.id,
+                vehicleId: occupant.vehicle?.id || null,
+                licensePlate: occupant.vehicle?.licensePlate || occupant.session.licensePlate,
+                parkingSlotId: response.parkingSlot.id,
+                entryTime: occupant.session.entryTime,
+                exitTime: occupant.session.exitTime || null,
+                fee: occupant.session.fee,
+                status: occupant.session.status || 'active'
+              },
+              vehicleInfo: occupant.vehicle ? {
+                id: occupant.vehicle.id,
+                licensePlate: occupant.vehicle.licensePlate,
+                vehicleType: occupant.vehicle.vehicleType,
+                userId: occupant.vehicle.userId
+              } : undefined,
+              userInfo: occupant.user ? {
+                id: occupant.user.id,
+                fullName: occupant.user.fullName,
+                email: occupant.user.email,
+                roleId: 0 // Default value, not provided in response
+              } : undefined
+            };
+          }
+          this.loading = false;
+        },
+        error: (err) => {
+          console.error('Error loading vehicle details:', err);
+          this.loading = false;
+          // Keep the modal open with existing data
+        }
+      });
+    }
+  }
+
+  closeSpotDetailModal(): void {
+    this.showSpotDetailModal = false;
+    this.selectedSpot = null;
+  }
+
+  handleDeleteSpot(spot: ParkingSpot, event: Event): void {
+    event.stopPropagation(); // Ngăn chặn click event bubble
+    if (!confirm(`Bạn có chắc chắn muốn xóa vị trí đỗ "${spot.id}"? Hành động này không thể hoàn tác.`)) {
+      return;
+    }
+
+    if (!spot.slotId) {
+      this.error = 'Không tìm thấy ID vị trí đỗ.';
+      return;
+    }
+
+    this.api
+      .deleteParkingSlot(spot.slotId)
+      .subscribe({
+        next: () => {
+          if (this.selectedLotId) {
+            this.loadSlotsForLot(this.selectedLotId);
+          }
+        },
+        error: (err) => {
+          const errorMessage = err?.error?.error || err?.error?.message || err?.message;
+          if (errorMessage?.includes('permission') || errorMessage?.includes('Access denied')) {
+            this.error = 'Bạn không có quyền thực hiện thao tác này. Chức năng này chỉ dành cho quản trị viên.';
+          } else {
+            this.error = errorMessage || 'Không thể xóa vị trí đỗ. Vui lòng thử lại.';
+          }
+        }
+      });
+  }
+
   private loadData(): void {
     this.loading = true;
     this.error = null;
@@ -1507,13 +1628,14 @@ export class ParkingMapComponent implements OnInit, AfterViewInit, OnDestroy {
       slots: this.api.getParkingSlots(),
       sessions: this.api.getParkingSessions(),
       vehicles: this.api.getVehicles(),
-      lots: this.api.getParkingLots()
+      lots: this.api.getParkingLots(),
+      users: this.api.getUsers().pipe(catchError(() => of([])))
     })
       .pipe(finalize(() => (this.loading = false)))
       .subscribe({
-        next: ({ slots, sessions, vehicles, lots }) => {
+        next: ({ slots, sessions, vehicles, lots, users }) => {
           this.parkingLots = lots;
-          this.spots = this.hydrateSlots(slots, sessions, vehicles);
+          this.spots = this.hydrateSlots(slots, sessions, vehicles, users);
         },
         error: () => {
           this.error = 'Không tải được sơ đồ bãi xe từ máy chủ.';
@@ -1521,9 +1643,10 @@ export class ParkingMapComponent implements OnInit, AfterViewInit, OnDestroy {
       });
   }
 
-  private hydrateSlots(slots: ParkingSlot[], sessions: ParkingSession[], vehicles?: Vehicle[]): ParkingSpot[] {
+  private hydrateSlots(slots: ParkingSlot[], sessions: ParkingSession[], vehicles?: Vehicle[], users?: User[]): ParkingSpot[] {
     const activeSessions = sessions.filter((session) => session.status === 'active');
     const vehicleMap = vehicles ? new Map(vehicles.map((v) => [v.id, v])) : new Map();
+    const userMap = users ? new Map(users.map((u) => [u.id, u])) : new Map();
     const sessionBySlot = new Map<number, ParkingSession>();
     activeSessions.forEach((session) => {
       sessionBySlot.set(session.parkingSlotId, session);
@@ -1532,12 +1655,17 @@ export class ParkingMapComponent implements OnInit, AfterViewInit, OnDestroy {
     return slots.map((slot) => {
       const session = sessionBySlot.get(slot.id);
       const vehicle = session ? vehicleMap.get(session.vehicleId) : undefined;
+      const userInfo = vehicle?.userId ? userMap.get(vehicle.userId) : undefined;
       return {
         id: slot.slotCode,
+        slotId: slot.id, // Lưu ID thực tế để xóa
         status: slot.status,
-        vehicle: vehicle?.licensePlate,
+        vehicle: vehicle?.licensePlate || session?.licensePlate,
         time: session ? new Date(session.entryTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : undefined,
-        parkingLotId: slot.parkingLotId
+        parkingLotId: slot.parkingLotId,
+        session: session, // Lưu session để hiển thị chi tiết
+        vehicleInfo: vehicle, // Lưu thông tin đầy đủ về xe
+        userInfo: userInfo // Lưu thông tin chủ xe
       };
     });
   }
