@@ -180,6 +180,7 @@ export interface ProcessVehicleResponse {
   message: string;
   licensePlate?: string;
   isRegistered?: boolean;
+  imageUrl?: string; // URL của ảnh đã được detect
   vehicle?: {
     id: number;
     licensePlate: string;

@@ -1203,6 +1203,49 @@
   font-weight: 600;
 }
 
+.result-image-preview {
+  position: relative;
+  display: inline-block;
+  margin-top: 8px;
+  border-radius: 8px;
+  overflow: hidden;
+  border: 2px solid #e5e7eb;
+  max-width: 100%;
+}
+
+.result-image {
+  display: block;
+  max-width: 400px;
+  max-height: 300px;
+  width: auto;
+  height: auto;
+  object-fit: contain;
+}
+
+.result-image-link {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  background: rgba(0, 0, 0, 0.6);
+  color: #ffffff;
+  border-radius: 6px;
+  transition: background 0.2s ease;
+}
+
+.result-image-link:hover {
+  background: rgba(0, 0, 0, 0.8);
+}
+
+.result-image-link svg {
+  width: 18px;
+  height: 18px;
+}
+
 @keyframes spin {
   from {
     transform: rotate(0deg);

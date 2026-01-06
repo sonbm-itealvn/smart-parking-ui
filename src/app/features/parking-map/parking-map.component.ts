@@ -369,9 +369,12 @@ export class ParkingMapComponent implements OnInit, AfterViewInit, OnDestroy {
       .subscribe({
         next: ({ slots, sessions, vehicles, users }) => {
           this.spots = this.hydrateSlots(slots, sessions, vehicles, users);
-          // Draw slots on map if map image is loaded
+          // Draw slots on map if map image is loaded - always redraw after reload
           if (this.mapImageUrl && this.mapStage) {
-            this.drawSlotsOnMap(slots);
+            // Use setTimeout to ensure map stage is ready
+            setTimeout(() => {
+              this.drawSlotsOnMap(slots);
+            }, 100);
           }
         },
         error: (err) => {
@@ -409,6 +412,8 @@ export class ParkingMapComponent implements OnInit, AfterViewInit, OnDestroy {
       return;
     }
 
+    // Reset lastResult when starting new process
+    camera.lastResult = undefined;
     camera.loading = true;
     camera.status = 'active';
     this.error = null;
@@ -477,6 +482,13 @@ export class ParkingMapComponent implements OnInit, AfterViewInit, OnDestroy {
           } else if (isExit) {
             console.log('✅ Xe đã RA:', response);
           }
+
+          // Reset lastResult after 5 seconds to return to camera view
+          setTimeout(() => {
+            if (camera.lastResult === response) {
+              camera.lastResult = undefined;
+            }
+          }, 5000);
         },
         error: (err) => {
           this.handleProcessVehicleError(err, camera);
@@ -616,7 +628,12 @@ export class ParkingMapComponent implements OnInit, AfterViewInit, OnDestroy {
         .subscribe({
           next: (response) => {
             camera.loading = false;
-            camera.lastResult = response;
+            // Add imageUrl to response for display
+            const responseWithImage: ProcessVehicleResponse = {
+              ...response,
+              imageUrl: imageUrl
+            };
+            camera.lastResult = responseWithImage;
             
             // Reload slots after processing
             if (this.selectedLotId) {
@@ -634,6 +651,13 @@ export class ParkingMapComponent implements OnInit, AfterViewInit, OnDestroy {
             } else if (isExit) {
               console.log('✅ Xe đã RA:', response);
             }
+
+            // Reset lastResult after 5 seconds to return to camera view
+            setTimeout(() => {
+              if (camera.lastResult === responseWithImage) {
+                camera.lastResult = undefined;
+              }
+            }, 5000);
           },
           error: (err) => {
             this.handleProcessVehicleError(err, camera);
