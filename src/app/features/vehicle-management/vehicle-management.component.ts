@@ -3,7 +3,7 @@ import { Component, OnInit, inject } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { finalize, forkJoin, switchMap } from 'rxjs';
 import { ApiClientService } from '../../core/services/api-client.service';
-import { ParkingSession, ParkingSlot, Vehicle as ApiVehicle, ParkingLot } from '../../core/models/api.models';
+import { ParkingSession, ParkingSlot, Vehicle as ApiVehicle, ParkingLot, ParkingLotVehiclesResponse } from '../../core/models/api.models';
 
 type VehicleStatus = 'parked' | 'exited';
 
@@ -42,6 +42,8 @@ export class VehicleManagementComponent implements OnInit {
   
   vehicles: VehicleRow[] = [];
   parkingSlots: ParkingSlot[] = [];
+  vehiclesResponse: ParkingLotVehiclesResponse | null = null; // Lưu response gốc để tính tổng fee
+  slotsWithSessions: any[] = []; // Lưu slots với parkingSessions để tính tổng fee
 
   loading = true;
   submitting = false;
@@ -67,6 +69,8 @@ export class VehicleManagementComponent implements OnInit {
     this.selectedLotId = null;
     this.selectedLot = null;
     this.vehicles = [];
+    this.slotsWithSessions = []; // Clear slots khi quay lại danh sách
+    this.vehiclesResponse = null; // Clear response
   }
 
   get filteredVehicles(): VehicleRow[] {
@@ -91,7 +95,27 @@ export class VehicleManagementComponent implements OnInit {
     const parked = this.vehicles.filter((v) => v.status === 'parked').length;
     const exitedVehicles = this.vehicles.filter((v) => v.status === 'exited');
     const exited = exitedVehicles.length;
-    const totalFee = exitedVehicles.reduce((sum, vehicle) => sum + (vehicle.fee || 0), 0);
+    
+    // Tính tổng fee từ slots với parkingSessions có status 'completed'
+    let totalFee = 0;
+    if (this.slotsWithSessions && this.slotsWithSessions.length > 0) {
+      this.slotsWithSessions.forEach((slot: any) => {
+        if (slot.parkingSessions && Array.isArray(slot.parkingSessions)) {
+          slot.parkingSessions.forEach((session: any) => {
+            if (session.status === 'completed') {
+              // Convert fee từ string sang number, null/undefined = 0
+              const fee = session.fee ? parseFloat(String(session.fee)) : 0;
+              totalFee += fee;
+              console.log('Found completed session with fee:', session.licensePlate, fee);
+            }
+          });
+        }
+      });
+      console.log('Total fee calculated:', totalFee, 'from', this.slotsWithSessions.length, 'slots');
+    } else {
+      console.log('No slotsWithSessions available for fee calculation');
+    }
+    
     return { parked, exited, totalFee };
   }
 
@@ -229,34 +253,67 @@ export class VehicleManagementComponent implements OnInit {
     this.loading = true;
     this.error = null;
 
-    this.api
-      .getParkingLotVehicles(lotId)
+    // Load slots với parkingSessions
+    this.api.getParkingSlots({ parkingLotId: lotId })
       .pipe(finalize(() => (this.loading = false)))
       .subscribe({
-        next: (response) => {
-          console.log('Parking lot vehicles response:', response);
-          // Update selected lot info if needed
-          if (response.parkingLot && this.selectedLot) {
-            this.selectedLot.name = response.parkingLot.name;
-            this.selectedLot.location = response.parkingLot.address;
-          }
+        next: (slots) => {
+          console.log('Parking slots with sessions:', slots);
+          // Lưu slots với sessions để tính tổng fee
+          this.slotsWithSessions = slots;
           // Load available slots for the add vehicle modal
-          this.api.getParkingSlots({ parkingLotId: lotId }).subscribe({
-            next: (slots) => {
-              this.parkingSlots = slots.filter((slot) => slot.status === 'available');
+          this.parkingSlots = slots.filter((slot: any) => slot.status === 'available');
+          
+          // Compose vehicle rows từ slots với sessions
+          this.vehicles = this.composeRowsFromSlots(slots);
+          
+          // Vẫn giữ logic cũ cho getParkingLotVehicles nếu cần
+          this.api.getParkingLotVehicles(lotId).subscribe({
+            next: (response) => {
+              if (response.parkingLot && this.selectedLot) {
+                this.selectedLot.name = response.parkingLot.name;
+                this.selectedLot.location = response.parkingLot.address;
+              }
+              this.vehiclesResponse = response;
             },
             error: (err) => {
-              console.error('Error loading slots:', err);
+              console.error('Error loading parking lot vehicles:', err);
             }
           });
-          // Compose vehicle rows from response
-          this.vehicles = this.composeRowsFromResponse(response);
         },
         error: (err) => {
-          console.error('Error loading vehicles:', err);
+          console.error('Error loading slots:', err);
           this.error = err?.error?.message || 'Không tải được danh sách phương tiện.';
         }
       });
+  }
+
+  private composeRowsFromSlots(slots: any[]): VehicleRow[] {
+    const rows: VehicleRow[] = [];
+    
+    slots.forEach((slot: any) => {
+      if (slot.parkingSessions && Array.isArray(slot.parkingSessions)) {
+        slot.parkingSessions.forEach((session: any) => {
+          const isExited = session.status === 'completed';
+          rows.push({
+            sessionId: parseInt(String(session.id), 10),
+            vehicleId: session.vehicleId ? parseInt(String(session.vehicleId), 10) : 0,
+            plate: session.licensePlate || 'N/A',
+            slot: slot.slotCode || 'N/A',
+            entryTime: session.entryTime,
+            exitTime: session.exitTime || undefined,
+            duration: session.exitTime && session.entryTime
+              ? this.buildDuration(session.entryTime, session.exitTime)
+              : undefined,
+            fee: session.fee ? parseFloat(String(session.fee)) : undefined,
+            status: isExited ? 'exited' : 'parked',
+            vehicleType: 'unknown' // Có thể lấy từ vehicle nếu có
+          });
+        });
+      }
+    });
+    
+    return rows;
   }
 
   private composeRowsFromResponse(response: any): VehicleRow[] {

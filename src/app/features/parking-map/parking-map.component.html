@@ -36,7 +36,6 @@
     <div class="lot-card" *ngFor="let lot of parkingLots" (click)="selectLot(lot)">
       <div class="lot-card__header">
         <h3 class="lot-card__title">{{ lot.name }}</h3>
-        <span class="lot-card__badge">{{ lot.totalSlots }} chỗ</span>
       </div>
       <div class="lot-card__body">
         <p class="lot-card__location">
@@ -238,6 +237,13 @@
               </p>
             </div>
           </div>
+        </div>
+        <div class="camera-grid__empty" *ngIf="cameras.length === 0">
+          <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path>
+            <circle cx="12" cy="13" r="4"></circle>
+          </svg>
+          <p>Chưa có camera nào cho bãi đỗ này</p>
         </div>
       </div>
     </div>

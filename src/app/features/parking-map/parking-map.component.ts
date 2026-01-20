@@ -174,6 +174,12 @@ export class ParkingMapComponent implements OnInit, AfterViewInit, OnDestroy {
   }
 
   loadCameras(): void {
+    // Only load cameras if not viewing a specific lot
+    // If viewing a lot, cameras will be loaded via loadCamerasForLot()
+    if (this.selectedLotId) {
+      return;
+    }
+    
     this.api.getCameras().subscribe({
       next: (cameras) => {
         // Map Camera từ API sang CameraFeed
@@ -239,16 +245,15 @@ export class ParkingMapComponent implements OnInit, AfterViewInit, OnDestroy {
   }
 
   loadCamerasForLot(parkingLotId: number): void {
+    // Stop all existing camera streams before loading new ones
+    this.cameras.forEach(camera => {
+      this.stopCameraStream(camera);
+    });
+
     this.api.getCameras(parkingLotId).subscribe({
       next: (cameras) => {
-        // Stop streams for cameras being replaced
-        const oldLotCameras = this.cameras.filter(c => c.parkingLotId === parkingLotId);
-        oldLotCameras.forEach(camera => {
-          this.stopCameraStream(camera);
-        });
-
-        // Update cameras for this parking lot
-        const lotCameras: CameraFeed[] = cameras.map(camera => ({
+        // Only show cameras for this specific parking lot
+        this.cameras = cameras.map(camera => ({
           id: camera.id,
           name: camera.name,
           location: camera.location || camera.name,
@@ -259,12 +264,8 @@ export class ParkingMapComponent implements OnInit, AfterViewInit, OnDestroy {
           streamUrl: camera.streamUrl
         }));
         
-        // Merge with existing cameras (keep cameras not in this lot, update/add cameras for this lot)
-        const otherCameras = this.cameras.filter(c => c.parkingLotId !== parkingLotId);
-        this.cameras = [...otherCameras, ...lotCameras];
-        
         // Start streams for active webcam cameras
-        lotCameras.forEach(camera => {
+        this.cameras.forEach(camera => {
           if (camera.status === 'active' && camera.cameraType === 'webcam' && camera.streamUrl) {
             this.startCameraStream(camera);
           }
@@ -272,6 +273,8 @@ export class ParkingMapComponent implements OnInit, AfterViewInit, OnDestroy {
       },
       error: (err) => {
         console.error('Error loading cameras for lot:', err);
+        // Set empty array on error
+        this.cameras = [];
       }
     });
   }
@@ -308,10 +311,16 @@ export class ParkingMapComponent implements OnInit, AfterViewInit, OnDestroy {
   }
 
   backToList(): void {
+    // Stop all camera streams before clearing
+    this.cameras.forEach(camera => {
+      this.stopCameraStream(camera);
+    });
+    
     this.selectedLotId = null;
     this.selectedLot = null;
     this.selectedZone = 'all';
     this.spots = [];
+    this.cameras = []; // Clear cameras when going back to list
   }
 
   private loadParkingLots(): void {

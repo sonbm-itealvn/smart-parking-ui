@@ -27,7 +27,6 @@
     <div class="lot-card" *ngFor="let lot of parkingLots" (click)="selectLot(lot)">
       <div class="lot-card__header">
         <h3 class="lot-card__title">{{ lot.name }}</h3>
-        <span class="lot-card__badge">{{ lot.totalSlots }} chỗ</span>
       </div>
       <div class="lot-card__body">
         <p class="lot-card__location">

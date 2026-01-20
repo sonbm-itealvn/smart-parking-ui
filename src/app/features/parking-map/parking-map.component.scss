@@ -257,6 +257,30 @@
   gap: 16px;
 }
 
+.camera-grid__empty {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  padding: 48px 24px;
+  text-align: center;
+  color: #6b7280;
+}
+
+.camera-grid__empty svg {
+  width: 64px;
+  height: 64px;
+  opacity: 0.5;
+}
+
+.camera-grid__empty p {
+  margin: 0;
+  font-size: 0.9375rem;
+  font-weight: 500;
+}
+
 .camera-preview {
   position: relative;
   aspect-ratio: 16 / 9;
