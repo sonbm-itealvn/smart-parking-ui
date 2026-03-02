@@ -1,4 +1,4 @@
-﻿<div class="parking-map-page">
+<div class="parking-map-page">
   <div class="page-header">
     <div>
       <h2 class="page-title" *ngIf="!selectedLotId">Danh sách bãi đỗ xe</h2>
@@ -46,6 +46,31 @@
           {{ lot.location }}
         </p>
         <p class="lot-card__price">{{ lot.pricePerHour | number }} VNĐ/giờ</p>
+      </div>
+      <div class="lot-card__camera-status">
+        <div class="lot-card__camera-badge" *ngIf="lotHasCamera(lot.id)">
+          <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path>
+            <circle cx="12" cy="13" r="4"></circle>
+          </svg>
+          <span>{{ getLotCameraCount(lot.id) }} camera</span>
+        </div>
+        <button
+          type="button"
+          class="lot-card__add-camera-btn"
+          *ngIf="!lotHasCamera(lot.id)"
+          (click)="openAddCameraForLot(lot, $event)"
+          title="Thêm camera cho bãi đỗ này"
+        >
+          <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path>
+            <circle cx="12" cy="13" r="4"></circle>
+          </svg>
+          <svg viewBox="0 0 20 20" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" class="add-icon">
+            <path d="M10 4v12M4 10h12"></path>
+          </svg>
+          <span>Thêm camera</span>
+        </button>
       </div>
       <div class="lot-card__footer">
         <button type="button" class="lot-card__button">Xem chi tiết</button>
@@ -752,6 +777,79 @@
         </div>
       </div>
     </div>
+  </div>
+</div>
+
+<!-- Add Camera Modal -->
+<div class="modal" *ngIf="showAddCameraModal">
+  <div class="modal__backdrop" (click)="closeAddCameraModal()"></div>
+  <div class="modal__content">
+    <header>
+      <h3>Thêm camera cho {{ addCameraForLot?.name }}</h3>
+      <button type="button" (click)="closeAddCameraModal()">×</button>
+    </header>
+    <div class="modal__body">
+      <!-- Webcam device selector -->
+      <div class="camera-device-selector" *ngIf="availableDevices.length > 0 && newCamera.cameraType === 'webcam'">
+        <label>
+          <span>Chọn webcam có sẵn</span>
+        </label>
+        <div class="device-list">
+          <button
+            type="button"
+            class="device-item"
+            *ngFor="let device of availableDevices"
+            [class.device-item--selected]="newCamera.deviceId === device.deviceId"
+            (click)="selectDeviceForNewCamera(device.deviceId)"
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path>
+              <circle cx="12" cy="13" r="4"></circle>
+            </svg>
+            <span>{{ device.label || 'Camera ' + (availableDevices.indexOf(device) + 1) }}</span>
+          </button>
+        </div>
+      </div>
+
+      <label>
+        <span>Loại camera <span class="required">*</span></span>
+        <select [(ngModel)]="newCamera.cameraType">
+          <option value="webcam">Webcam</option>
+          <option value="http">HTTP</option>
+          <option value="rtsp">RTSP</option>
+        </select>
+      </label>
+      <label>
+        <span>Tên camera <span class="required">*</span></span>
+        <input type="text" [(ngModel)]="newCamera.name" placeholder="Ví dụ: Camera cổng vào" />
+      </label>
+      <label>
+        <span>{{ newCamera.cameraType === 'webcam' ? 'Device ID' : 'Stream URL' }} <span class="required">*</span></span>
+        <input type="text" [(ngModel)]="newCamera.streamUrl" [placeholder]="newCamera.cameraType === 'webcam' ? 'Chọn webcam ở trên hoặc nhập Device ID' : 'Ví dụ: rtsp://192.168.1.100:554/stream'" />
+      </label>
+      <label>
+        <span>Vị trí</span>
+        <input type="text" [(ngModel)]="newCamera.location" placeholder="Ví dụ: Cổng vào" />
+      </label>
+      <label>
+        <span>Mô tả</span>
+        <input type="text" [(ngModel)]="newCamera.description" placeholder="Mô tả camera" />
+      </label>
+      <label>
+        <span>Trạng thái</span>
+        <select [(ngModel)]="newCamera.status">
+          <option value="active">Hoạt động</option>
+          <option value="inactive">Không hoạt động</option>
+          <option value="maintenance">Bảo trì</option>
+        </select>
+      </label>
+    </div>
+    <footer>
+      <button type="button" class="btn btn-ghost" (click)="closeAddCameraModal()">Hủy</button>
+      <button type="button" class="btn btn-primary" [disabled]="submitting || !newCamera.name || !newCamera.streamUrl" (click)="handleCreateCamera()">
+        {{ submitting ? 'Đang lưu...' : 'Thêm camera' }}
+      </button>
+    </footer>
   </div>
 </div>
 

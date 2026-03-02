@@ -1,10 +1,10 @@
-﻿import { CommonModule } from '@angular/common';
+import { CommonModule } from '@angular/common';
 import { Component, OnInit, inject, ViewChild, ElementRef, AfterViewInit, OnDestroy } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { finalize, forkJoin, firstValueFrom, catchError, of, throwError } from 'rxjs';
 import Konva from 'konva';
 import { ApiClientService } from '../../core/services/api-client.service';
-import { ParkingSession, ParkingSlot, ParkingSlotStatus, ParkingLot, Vehicle, ProcessVehicleResponse, Camera, User, ParkingLotVehiclesResponse, CurrentOccupantResponse } from '../../core/models/api.models';
+import { ParkingSession, ParkingSlot, ParkingSlotStatus, ParkingLot, Vehicle, ProcessVehicleResponse, Camera, CameraType, CameraStatus, User, ParkingLotVehiclesResponse, CurrentOccupantResponse } from '../../core/models/api.models';
 
 type SpotStatus = ParkingSlotStatus;
 
@@ -53,6 +53,7 @@ export class ParkingMapComponent implements OnInit, AfterViewInit, OnDestroy {
   private transformer: Konva.Transformer | null = null;
 
   cameras: CameraFeed[] = [];
+  lotCamerasMap: Map<number, Camera[]> = new Map();
 
   readonly statDefinitions: Array<{ key: StatKey; label: string; indicator?: SpotStatus }> = [
     { key: 'total', label: 'Tổng số chỗ' },
@@ -103,6 +104,29 @@ export class ParkingMapComponent implements OnInit, AfterViewInit, OnDestroy {
   zoomLevel = 1;
   stagePosition = { x: 0, y: 0 };
   originalImageDimensions: { width: number; height: number } | null = null; // Kích thước ảnh gốc để tính phần trăm
+
+  // Add Camera Modal
+  showAddCameraModal = false;
+  addCameraForLot: ParkingLot | null = null;
+  availableDevices: MediaDeviceInfo[] = [];
+  newCamera: {
+    name: string;
+    streamUrl: string;
+    cameraType: CameraType;
+    status: CameraStatus;
+    parkingLotId: number | null;
+    description: string;
+    location: string;
+    deviceId?: string;
+  } = {
+    name: '',
+    streamUrl: '',
+    cameraType: 'webcam',
+    status: 'active',
+    parkingLotId: null,
+    description: '',
+    location: ''
+  };
 
   // Forms
   newLot: Partial<ParkingLot> = {
@@ -171,6 +195,7 @@ export class ParkingMapComponent implements OnInit, AfterViewInit, OnDestroy {
   ngOnInit(): void {
     this.loadParkingLots();
     this.loadCameras();
+    this.loadAllCamerasForLotMap();
   }
 
   loadCameras(): void {
@@ -206,6 +231,117 @@ export class ParkingMapComponent implements OnInit, AfterViewInit, OnDestroy {
         this.cameras = [];
       }
     });
+  }
+
+  loadAllCamerasForLotMap(): void {
+    this.api.getCameras().subscribe({
+      next: (cameras) => {
+        this.lotCamerasMap.clear();
+        cameras.forEach(camera => {
+          if (camera.parkingLotId) {
+            const existing = this.lotCamerasMap.get(camera.parkingLotId) || [];
+            existing.push(camera);
+            this.lotCamerasMap.set(camera.parkingLotId, existing);
+          }
+        });
+      },
+      error: (err) => {
+        console.error('Error loading cameras for lot map:', err);
+      }
+    });
+  }
+
+  lotHasCamera(lotId: number): boolean {
+    const cameras = this.lotCamerasMap.get(lotId);
+    return !!cameras && cameras.length > 0;
+  }
+
+  getLotCameraCount(lotId: number): number {
+    return this.lotCamerasMap.get(lotId)?.length || 0;
+  }
+
+  openAddCameraForLot(lot: ParkingLot, event: Event): void {
+    event.stopPropagation();
+    this.addCameraForLot = lot;
+    this.newCamera = {
+      name: '',
+      streamUrl: '',
+      cameraType: 'webcam',
+      status: 'active',
+      parkingLotId: lot.id,
+      description: '',
+      location: lot.location || ''
+    };
+    this.showAddCameraModal = true;
+    this.loadAvailableDevices();
+  }
+
+  closeAddCameraModal(): void {
+    this.showAddCameraModal = false;
+    this.addCameraForLot = null;
+    this.newCamera.deviceId = undefined;
+  }
+
+  async loadAvailableDevices(): Promise<void> {
+    try {
+      await navigator.mediaDevices.getUserMedia({ video: true });
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      this.availableDevices = devices.filter(device => device.kind === 'videoinput');
+    } catch (err) {
+      console.error('Error accessing devices:', err);
+    }
+  }
+
+  selectDeviceForNewCamera(deviceId: string): void {
+    const device = this.availableDevices.find(d => d.deviceId === deviceId);
+    if (device) {
+      this.newCamera.deviceId = deviceId;
+      this.newCamera.streamUrl = deviceId;
+      this.newCamera.name = device.label || `Camera ${this.availableDevices.indexOf(device) + 1}`;
+      this.newCamera.cameraType = 'webcam';
+    }
+  }
+
+  handleCreateCamera(): void {
+    if (!this.newCamera.name || !this.newCamera.streamUrl) {
+      this.error = 'Vui lòng điền đầy đủ thông tin camera.';
+      return;
+    }
+
+    this.submitting = true;
+    this.error = null;
+
+    const payload: any = {
+      name: this.newCamera.name,
+      streamUrl: this.newCamera.streamUrl,
+      cameraType: this.newCamera.cameraType,
+      status: this.newCamera.status
+    };
+
+    if (this.newCamera.parkingLotId) {
+      payload.parkingLotId = this.newCamera.parkingLotId;
+    }
+    if (this.newCamera.description) {
+      payload.description = this.newCamera.description;
+    }
+    if (this.newCamera.location) {
+      payload.location = this.newCamera.location;
+    }
+
+    this.api.createCamera(payload)
+      .pipe(finalize(() => (this.submitting = false)))
+      .subscribe({
+        next: () => {
+          this.closeAddCameraModal();
+          this.loadAllCamerasForLotMap();
+          if (this.selectedLotId) {
+            this.loadCamerasForLot(this.selectedLotId);
+          }
+        },
+        error: (err) => {
+          this.error = err?.error?.message || 'Không thể tạo camera. Vui lòng thử lại.';
+        }
+      });
   }
 
   ngAfterViewInit(): void {
